@@ -75,7 +75,7 @@ SimpleTLB::SimpleTLB(SST::ComponentId_t id, SST::Params& params): Component(id) 
 
     fixed_mapping_len = fixed_mapping_len_ua.getRoundedValue(); //extract int val
     
-    //NOTE: printed string wont be accurate since we modified it in-place for fixByteUnits
+    //NOTE: printed string won't be exactly what user entered: we modified it in-place with fixByteUnits
     if (!fixed_mapping_len_ua.hasUnits("") && !fixed_mapping_len_ua.hasUnits("B")) {
         out->fatal(CALL_INFO, -1, "Invalid param: fixed_mapping_len - must have units of bytes (B). " 
                                     "Ex: '8B', '40MB'; You entered: '%s'", fixed_mapping_len_str.c_str());
