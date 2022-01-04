@@ -20,7 +20,12 @@ libSamba_la_SOURCES = \
 	PageTableWalker.cc \
 	PageFaultHandler.h \
 	SimpleTLB.cc \
-	SimpleTLB.h 
+	SimpleTLB.h \
+	SimplePageTable.h \
+	SimplePageTable.cc \
+	PageTableInterface.h \
+	TestOS.cc \
+	TestOS.h
 
 
 libSamba_la_CPPFLAGS = \
