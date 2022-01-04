@@ -32,10 +32,6 @@ class TestOSComponent : public SST::Component {
         )
 
 
-        // SST_ELI_DOCUMENT_STATISTICS(
-        //     //{ "tlb_hits",        "Number of TLB hits", "requests", 1},   // Name, Desc, Enable Level
-        // )
-
         SST_ELI_DOCUMENT_PARAMS(
             {"verbose", "(uint) Output verbosity for warnings/errors. 0[fatal error only], 1[warnings], 2[full state dump on fatal error]","1"},
         )

@@ -39,18 +39,22 @@ using SST::MemHierarchy::Addr;
 // #define _L10_  CALL_INFO,10,0 //everything
 
 
-TestOSComponent::TestOSComponent(SST::ComponentId_t id, SST::Params& params) {
+TestOSComponent::TestOSComponent(SST::ComponentId_t id, SST::Params& params): Component(id) {
     int verbosity = params.find<int>("verbose", 1);
     out = new SST::Output("TestOS[@f:@l:@p] ", verbosity, 0, SST::Output::STDOUT);
     out->verbose(_L1_, "Creating TestOS component...\n");
 
 
-    //  pt_iface = loadUserSubComponent<PageTableInterface>("pagetable_interface");
-    //  if (pt_iface == NULL) 
-    //      { out->fatal(CALL_INFO, -1, "Error - unable to load 'pagetable_interface' subcomponent"); }
+    pt_iface = loadUserSubComponent<PageTableInterface>("pagetable_interface");
+    if (pt_iface == NULL) 
+        { out->fatal(CALL_INFO, -1, "Error - unable to load 'pagetable_interface' subcomponent"); }
 
-    //  //
-    //  pt_iface->initialize(NULL, new Event::Handler<TestOSComponent>(this, &TestOSComponent::handlePageTableEvent));
+    //
+    pt_iface->initialize(NULL, new Event::Handler<TestOSComponent>(this, &TestOSComponent::handlePageTableEvent));
+}
+
+TestOSComponent::~TestOSComponent() {
+    delete out;
 }
 
 
