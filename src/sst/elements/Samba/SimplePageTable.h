@@ -5,10 +5,13 @@
 
 #include <sst/core/sst_types.h>
 #include <sst/core/event.h>
-//#include <sst/core/component.h>
-//#include <sst/core/link.h>
+#include <sst/core/component.h>
+#include <sst/core/link.h>
 //#include <sst/core/timeConverter.h>
 //#include <sst/core/interfaces/simpleMem.h>
+
+#include <sst/elements/memHierarchy/memEventBase.h>
+#include <sst/elements/memHierarchy/memEvent.h>
 #include <sst/elements/memHierarchy/util.h>
 
 using SST::MemHierarchy::Addr;
@@ -17,8 +20,30 @@ namespace SST {
 namespace SambaComponent {
 
 //class PageTable : public SST::Component {
-class PageTable {
+class PageTable : public SST::Component {
     public:
+
+        // REGISTER THIS COMPONENT INTO THE ELEMENT LIBRARY
+        SST_ELI_REGISTER_COMPONENT(
+            PageTable,                          // Component class
+            "Samba",                            // Component library (for Python/library lookup)
+            "SimplePageTable",                  // Component name (for Python/library lookup)
+            SST_ELI_ELEMENT_VERSION(1,0,0),     // Version of the component (not related to SST version)
+            "PageTable to go with SimpleTLB",   // Description
+            COMPONENT_CATEGORY_UNCATEGORIZED    // Category
+        )
+
+
+        SST_ELI_DOCUMENT_PARAMS(
+            {"verbose", "(uint) Output verbosity for warnings/errors. 0[fatal error only], 1[warnings], 2[full state dump on fatal error]","1"},
+        )
+
+        SST_ELI_DOCUMENT_PORTS(
+            {"link_from_os", "Requests to map/unmap pages", {"PageTable.MappingEvent"}},
+            {"link_from_tlb", "Requests for translations",  {"MemHierarchy.MemEventBase"}},
+            // {"Port name", "Description", { "list of event types that the port can handle"} }
+        )
+
 
 
     typedef enum { ERR_EVENT=0, CREATE_MAPPING, MAP_PAGE, UNMAP_PAGE, MAP_ANON_PAGE } Map_EventType ;
@@ -75,16 +100,19 @@ class PageTable {
 
     public:
         // ???
-        PageTable();
+        PageTable(SST::ComponentId_t id, SST::Params& params);
+
+
+        void handleMappingEvent(Event *ev); // handles event from OS: adjusts mappings, sends back response on link
+        void handleTranslationEvent(Event *ev); // translate memEvents from tlbs
 
     private:
         // SST Output object, for printing, error messages, etc.        
         SST::Output* out;                                               
 
-        SST::Link* os_link; //link to whoever is creating mappings
+        SST::Link* link_from_os;  // link to whoever is creating mappings
+        SST::Link* link_from_tlb; // incoming memEvent translation requests
 
-        // handles incoming event: sends back response on link
-        void handleMappingEvent(Event *ev);
 
         // void handleTranslateEvent(){} //TODO
 };

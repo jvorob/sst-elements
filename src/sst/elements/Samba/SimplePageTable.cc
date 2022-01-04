@@ -20,15 +20,23 @@ using namespace SambaComponent;
 // #define _L10_  CALL_INFO,10,0 //everything
 
 
-PageTable::PageTable() {
-    //TODO: can't use this until we're a component?
-    //int verbosity = params.find<int>("verbose", 1); 
-    int verbosity = 1;
+PageTable::PageTable(SST::ComponentId_t id, SST::Params& params): Component(id) {
+
+    int verbosity = params.find<int>("verbose", 1);
     out = new SST::Output("PageTable[@f:@l:@p] ", verbosity, 0, SST::Output::STDOUT);
     out->verbose(_L1_, "Creating PageTable");
+
+
+
+    link_from_os =  configureLink("link_from_os",  new Event::Handler<PageTable>(this, &PageTable::handleMappingEvent));
+    link_from_tlb = configureLink("link_from_tlb", new Event::Handler<PageTable>(this, &PageTable::handleTranslationEvent));
+
+    sst_assert(link_from_os,  CALL_INFO, -1, "Error in %s: Failed to configure port 'link_from_os'\n", getName().c_str());
+    sst_assert(link_from_tlb, CALL_INFO, -1, "Error in %s: Failed to configure port 'link_from_tlb'\n", getName().c_str());
 }
 
 
+// Page mappings requests from OS
 void PageTable::handleMappingEvent(SST::Event *ev) {
     auto m_ev  = dynamic_cast<PageTable::MappingEvent*>(ev);
     
@@ -38,4 +46,17 @@ void PageTable::handleMappingEvent(SST::Event *ev) {
 
     
     out->verbose(_L3_, "Got mappingEvent: %s\n", m_ev->getString().c_str());
+}
+
+//Incoming MemEvents from TLBs, we need to translate them
+void PageTable::handleTranslationEvent(SST::Event *ev) {
+    //auto m_ev  = dynamic_cast<PageTable::MappingEvent*>(ev);
+    //
+    //if (!m_ev) {
+    //    out->fatal(CALL_INFO, -1, "Error! Bad Event Type received");
+    //}
+
+    
+    //out->verbose(_L3_, "Got translation event: %s\n", m_ev->getString().c_str());
+    out->verbose(_L3_, "Got translation event:\n");
 }

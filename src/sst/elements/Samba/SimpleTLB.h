@@ -28,6 +28,8 @@
 #include <sst/elements/memHierarchy/memEvent.h>
 #include <sst/elements/memHierarchy/util.h>
 
+#include "SimplePageTable.h"
+
 using namespace std;
 
 namespace SST {
@@ -87,6 +89,7 @@ class SimpleTLB : public SST::Component {
         SST_ELI_DOCUMENT_PORTS(
             {"high_network", "Link to cpu", {"MemHierarchy.MemEventBase"}},
             {"low_network", "Link toward caches", {"MemHierarchy.MemEventBase"}},
+            {"pagetable_link", "Link to pagetable for translations", {"MemHierarchy.MemEventBase"}},
 
 
             //{"cpu_to_mmu%(corecount)d", "Each Samba has link to its core", {}},
@@ -106,7 +109,8 @@ class SimpleTLB : public SST::Component {
 
 
         // Event handler, called when an event is received on high or low link
-        void handleEvent(SST::Event *ev, bool is_low);
+        typedef enum { FROM_HIGH=0, FROM_LOW, FROM_PT} enum_event_src ; //for tagging handlers
+        void handleEvent(SST::Event *ev, enum_event_src from);
                                                                         
         // Clock handler, called on each clock cycle                    
         virtual bool clockTick(SST::Cycle_t);                            
@@ -131,6 +135,8 @@ class SimpleTLB : public SST::Component {
         // Links                                                        
         SST::Link* link_high;  // to cpu
         SST::Link* link_low;  // to cpu
+        SST::Link* link_pagetable;  // to pagetable
+
 
         //Params for fixed-region translation (For quick-and-dirty virtual memory)
         uint64_t                fixed_mapping_len; // fixed mapping is active and values are validated iff (len != 0)
@@ -142,17 +148,6 @@ class SimpleTLB : public SST::Component {
         SST::MemHierarchy::MemEvent* translateMemEvent(SST::MemHierarchy::MemEvent *mEv);
 
         SST::MemHierarchy::Addr translatePage(SST::MemHierarchy::Addr virtPageAddr);
-
-        //SST::Link * event_link; // Note that this is a self-link for events
-        //SST::Link ** cpu_to_mmu;
-        //SST::Link ** mmu_to_cache;
-        //SST::Link ** ptw_to_mem;
-
-
-
-        //SST::Link** Samba_link;
-
-
 
 };
 
