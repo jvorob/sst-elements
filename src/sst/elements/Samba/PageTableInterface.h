@@ -16,6 +16,20 @@
 
 #include "SimplePageTable.h"
 
+
+
+
+#include <sst/elements/memHierarchy/util.h>
+
+
+// VERBOSITIES (using definitions from memHierarchy/util.h
+#define _L1_  CALL_INFO,1,0   //INFO  (this one isnt in util.h for some reason)
+// #define _L2_  CALL_INFO,2,0   //warnings
+// #define _L3_  CALL_INFO,3,0   //external events
+// #define _L5_  CALL_INFO,5,0   //internal transitions
+// #define _L10_  CALL_INFO,10,0 //everything
+
+
 namespace SST {
 namespace SambaComponent {
 
@@ -44,44 +58,77 @@ class PageTableInterface : public SST::SubComponent {
         )
 
 
-        // ==============================
+        // ========================== Constructor
         //
         PageTableInterface(ComponentId_t id, Params &params) : SubComponent(id) {
-            printf("AAAAAAAA\n (constructor in PagetableInterface\n");
+            int verbosity = params.find<int>("verbose", 5);
+            out = new SST::Output("PageTableInterface[@f:@l:@p>] ", verbosity, 0, SST::Output::STDOUT);
+            out->verbose(_L1_, "Creating PageTableInterface\n");
+
+            
 
             out_link = configureLink("pagetable_link", 
                 new Event::Handler<PageTableInterface>(this, &PageTableInterface::handleEvent));
 
             // Failure usually means the user didn't connect the port in the input file
-            sst_assert(out_link, CALL_INFO, -1, "Error in %s: Failed to configure port 'out_link'\n", getName().c_str());
+            sst_assert(out_link, CALL_INFO, -1, "Error in PageTableInterface: Failed to configure port 'out_link'\n");
 
 
         } ;
+
+        ~PageTableInterface() {
+            delete out;
+        }
+
+        // ==================== Event-sending Methods and Response handlers
+        //
 
         //Connect to link
         //TODO: for now link is not-implemented, we're hard-wiring it into SimpleTLB for testing
         // initialize with `initialize(link_ptr, new Event::Handler<ThisClass>(this, ThisClass::handleEvent))`
         void initialize (SST::Link *link, Event::HandlerBase *handler = NULL) {
-            printf("BBBBBBBB\n (initialize in PagetableInterface\n");
+            out->verbose(_L1_, "initialize(...) called\n");
         };
 
-        void createMapping(uint64_t mapping_id) {
-            std::cout << "Called PageTableInterface::createMapping; NOT IMPLEMENTED!\n";
 
-            auto ev = new PageTable::MappingEvent();
 
-            std::cout << ev->getString() << std::endl;
-            //out_link->send(ev);
+        void createMapping(uint64_t map_id) {
+            out->verbose(_L3_, "createMapping() called, sending blank mappingEvent\n");
+
+            auto type = PageTable::MappingEvent::eventType::CREATE_MAPPING;
+            auto ev = new PageTable::MappingEvent(type, map_id, -1, -1);
+            out_link->send(ev);
         };
 
+
+        void mapPage(uint64_t map_id, Addr v_addr, Addr p_addr, uint64_t flags) {
+            auto type = PageTable::MappingEvent::eventType::MAP_PAGE;
+            auto ev = new PageTable::MappingEvent(type, map_id, v_addr, p_addr);
+            out_link->send(ev);
+        }
+        void unmapPage(uint64_t map_id, Addr v_addr, uint64_t flags) {
+            auto type = PageTable::MappingEvent::eventType::UNMAP_PAGE;
+            auto ev = new PageTable::MappingEvent(type, map_id, v_addr, -1);
+            out_link->send(ev);
+        }
 
         // Event handler for PageTable event responses
         void handleEvent(SST::Event *ev) {
-            printf("Got event response in PageTableInterface\n");
+            auto map_event = dynamic_cast<PageTable::MappingEvent*>(ev);
+
+            if (!map_event) {
+                out->fatal(CALL_INFO, -1, "Error! Bad Event Type received by %s, expecting MappingEvent\n", getName().c_str());
+                return;
+            }
+
+            out->verbose(_L3_, "got event response: %s\n", map_event->getString().c_str());
         }
     
 
     private:
+        // SST Output object, for printing, error messages, etc.        
+        SST::Output* out;                                               
+
         SST::Link *out_link;
 
 };

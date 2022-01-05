@@ -103,12 +103,9 @@ SimpleTLB::SimpleTLB(SST::ComponentId_t id, SST::Params& params): Component(id) 
     }
 
 
-	//mmu_to_cache = (SST::Link **) malloc( sizeof(SST::Link *) * core_count );
 
-    //event_link = configureSelfLink(link_buffer, "1ns", new Event::Handler<PageTableWalker>(TLB[i]->getPTW(), &PageTableWalker::handleEvent));
-
-    // configure our link with a callback function that will be called whenever an event arrives
-    // Callback function gets true for link_low
+    // Wire up our links to event handlers
+    // One function for each link (since we're always moving memevents around, so pass in enum for source)
     link_high = configureLink("high_network", 
             new Event::Handler<SimpleTLB, enum_event_src>(this, &SimpleTLB::handleEvent, FROM_HIGH));
     link_low = configureLink("low_network",  
@@ -122,6 +119,7 @@ SimpleTLB::SimpleTLB(SST::ComponentId_t id, SST::Params& params): Component(id) 
     sst_assert(link_pagetable, CALL_INFO, -1, "Error in %s: Failed to configure port 'link_pagetable'\n", getName().c_str());
 
 
+    // Setup clock for delaying things
 	std::string cpu_clock = params.find<std::string>("clock", "1GHz");
 	registerClock( cpu_clock, new Clock::Handler<SimpleTLB>(this, &SimpleTLB::clockTick ) );
 
@@ -136,6 +134,7 @@ SimpleTLB::~SimpleTLB() {
 
 void SimpleTLB::init(unsigned int phase) {
 	// Pass-through init events between CPU and Memory/Caches
+    // (Before main simulation begins)
 
     out->verbose(_L2_, "SimpleTLB::init() called\n");
 
@@ -160,12 +159,12 @@ void SimpleTLB::init(unsigned int phase) {
 }
 
 void SimpleTLB::handleEvent(SST::Event *ev, enum_event_src from) {
-    // We high and low links share event handlers
+    // Shared handler for all links
 
     MemEventBase* m_event_base = dynamic_cast<MemEventBase*>(ev);
 
     if (!m_event_base) {
-        out->fatal(CALL_INFO, -1, "Error! Bad Event Type received by %s!\n", getName().c_str());
+        out->fatal(CALL_INFO, -1, "Error! Bad Event Type received by %s, expecting MemEventBase\n", getName().c_str());
         return;
     }
 
@@ -209,12 +208,12 @@ void SimpleTLB::handleEvent(SST::Event *ev, enum_event_src from) {
     } else if (from == FROM_PT) { // translated response from pagetable
         out->verbose(_L3_, "Got mem event back from pagetable, NOT IMPLEMENTED \n");
     } else {
-        sst_assert(false, CALL_INFO, -1, "Error in %s: bad enum value in handleEvent", getName().c_str()); // shouldn't happen
+        sst_assert(false, CALL_INFO, -1, "Error in %s: bad enum value in handleEvent", getName().c_str()); 
+        // shouldn't happen unless I typoed something
     }
 
     // Receiver has the responsiblity for deleting events
     // don't delete it since we're forwarding it
-    //delete mEvent;
 }
 
 

@@ -19,8 +19,39 @@ using SST::MemHierarchy::Addr;
 namespace SST {
 namespace SambaComponent {
 
-//class PageTable : public SST::Component {
 class PageTable : public SST::Component {
+
+    /*     PageTable Documentation:
+     *
+     * 
+     * Stores one or more memory mappigns (i.e. page tables)
+     * Can edit mappings with MappingEvents to port 'link_from_os':
+     * If a value is not specified, then it is 'dont-care' for that method
+     *
+     * - MAP_PAGE(id, v_addr, p_addr, flags) //flags will hold if huge page
+     * - UNMAP_PAGE(id, v_addr) 
+     *
+     *  // FOR LATER:  (when we support multiple mapping, will require TLB to send mapping id 
+     *                  and so will require a special translationEvent with a field for that (or changing the memevents)
+     * - CREATE_MAPPING (id) 
+     *
+     *  // FOR LATER (once I add an anon page pool)
+     *  // anonymous page pool is 
+     * - SET_ANON_POOL(id, p_addr, size?))
+     * - MAP_ANON_PAGE(id, v_addr, flags)
+     * - UNMAP_ANON_PAGE(id, v_addr, flags)
+     *
+     * Future considerations: 
+     * - can we remap existing pages? Should this be an error or a modify
+     * - can we map a huge page over existing smaller pages? probably error
+     * - Can we map pages into the anon page pool?
+     * - Can we change the anon page pool?
+     *
+     */
+
+
+
+
     public:
 
         // REGISTER THIS COMPONENT INTO THE ELEMENT LIBRARY
@@ -46,8 +77,10 @@ class PageTable : public SST::Component {
 
 
 
-    typedef enum { ERR_EVENT=0, CREATE_MAPPING, MAP_PAGE, UNMAP_PAGE, MAP_ANON_PAGE } Map_EventType ;
-    enum { PAGE_FAULT, PAGE_FAULT_RESPONSE, PAGE_FAULT_SERVED, SHOOTDOWN, PAGE_REFERENCE, SDACK } Translate_EventType ;
+    
+    // For later??
+    //enum { PAGE_FAULT, PAGE_FAULT_RESPONSE, PAGE_FAULT_SERVED, SHOOTDOWN, PAGE_REFERENCE, SDACK } Translate_EventType ;
+
 
     class MappingEvent; // map page, unmap page, etc
     class TranslateEvent; // translate-virt-page;  page faults?; 
@@ -56,17 +89,46 @@ class PageTable : public SST::Component {
 
     class MappingEvent : public SST::Event  {
         public:
+
+            // =========== EventType Enum and static helper func
+            typedef enum { ERR_EVENT=0, CREATE_MAPPING,   MAP_PAGE,   UNMAP_PAGE,   MAP_ANON_PAGE } eventType ;
+
+            //Just turn enum vals into strings, cause all the other ways seems messier
+            #define RETURN_CASE_STR(s)  case s: return #s
+            static std::string getEventName(eventType t) {
+                switch(t) {
+                    RETURN_CASE_STR( ERR_EVENT      );
+                    RETURN_CASE_STR( CREATE_MAPPING );
+                    RETURN_CASE_STR( MAP_PAGE       );
+                    RETURN_CASE_STR( UNMAP_PAGE     );
+                    RETURN_CASE_STR( MAP_ANON_PAGE  );
+                    default:
+                        return "INVALID_EVENT_ID";
+                }
+            }
+            #undef RETURN_CASE_STR
+
+
             // Members:
-            Map_EventType   type;
+            eventType       type;
+            uint64_t        map_id; //which mapping this event applies to
             Addr            v_addr;
             Addr            p_addr;
             int64_t         size;
             
             // Constructor
             MappingEvent() : SST::Event(), 
-                type(Map_EventType::ERR_EVENT),
+                type(eventType::ERR_EVENT),
                 v_addr(0),
                 p_addr(0),
+                size(0)
+            {}
+
+            MappingEvent(eventType t, uint64_t map_id, Addr v_addr, Addr p_addr) : SST::Event(), 
+                type(t),
+                map_id(map_id),
+                v_addr(v_addr),
+                p_addr(p_addr),
                 size(0)
             {}
 
@@ -85,12 +147,14 @@ class PageTable : public SST::Component {
             ImplementSerializable(PageTable::MappingEvent);
 
 
+
+
         public:
             std::string getString() {
                 char str_buff[512];
                 snprintf(str_buff, sizeof(str_buff), 
-                        "<MappingEvent: type: %d, VA 0x%lx, PA 0x%lx, size: 0x%lx>", 
-                        type, v_addr, p_addr, size);
+                        "<MappingEvent: type: %s, VA 0x%lx, PA 0x%lx, size: 0x%lx>", 
+                        getEventName(type).c_str(), v_addr, p_addr, size);
                 return std::string(str_buff);
             }
 
