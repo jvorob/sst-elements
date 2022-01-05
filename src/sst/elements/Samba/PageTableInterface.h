@@ -93,7 +93,7 @@ class PageTableInterface : public SST::SubComponent {
 
 
         void createMapping(uint64_t map_id) {
-            out->verbose(_L3_, "createMapping() called, sending blank mappingEvent\n");
+            out->verbose(_L3_, "Sending CREATE_MAPPING (does nothing for now)\n");
 
             auto type = PageTable::MappingEvent::eventType::CREATE_MAPPING;
             auto ev = new PageTable::MappingEvent(type, map_id, -1, -1);
@@ -102,11 +102,14 @@ class PageTableInterface : public SST::SubComponent {
 
 
         void mapPage(uint64_t map_id, Addr v_addr, Addr p_addr, uint64_t flags) {
+            out->verbose(_L3_, "Sending MAP_PAGE\n");
+
             auto type = PageTable::MappingEvent::eventType::MAP_PAGE;
             auto ev = new PageTable::MappingEvent(type, map_id, v_addr, p_addr);
             out_link->send(ev);
         }
         void unmapPage(uint64_t map_id, Addr v_addr, uint64_t flags) {
+            out->verbose(_L3_, "Sending UNMAP_PAGE\n");
             auto type = PageTable::MappingEvent::eventType::UNMAP_PAGE;
             auto ev = new PageTable::MappingEvent(type, map_id, v_addr, -1);
             out_link->send(ev);

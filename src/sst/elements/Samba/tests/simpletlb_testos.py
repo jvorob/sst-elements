@@ -12,7 +12,8 @@ sst.setProgramOption("stopAtCycle", "0 ns")
 
 
 memory_mb = 1024 #1GB
-virt_region_size_mb = 256
+virt_region_size_pages = 8
+
 KB=1024
 MB=1024 * KB
 GB=1024 * MB
@@ -24,10 +25,10 @@ GB=1024 * MB
 # ====== Custom TLB component
 C_tlb = sst.Component("TLB", "Samba.SimpleTLB")
 C_tlb.addParams({
-    "verbose": 3,
-    "fixed_mapping_va_start": "0x0",
-    "fixed_mapping_pa_start": "0xF000000",
-    "fixed_mapping_len": "128MB",
+    "verbose": 1,
+    # "fixed_mapping_va_start": "0x0",
+    # "fixed_mapping_pa_start": "0xF000000",
+    # "fixed_mapping_len": "128MB",
 })
 
 
@@ -40,7 +41,7 @@ SC_pt_interface.addParams({
 
 C_pagetable = sst.Component("pagetable", "Samba.SimplePageTable")
 C_pagetable.addParams({
-    "verbose": 5,
+    "verbose": 10,
 })
 
 
@@ -52,12 +53,13 @@ C_cpu = sst.Component("cpu", "miranda.BaseCPU")
 C_cpu.addParams({
 	"verbose" : 1,
         "maxmemreqpending": 1, #lets try to slow it down slightly
+        "max_reqs_cycle": 1, 
 })
 SC_cpugen = C_cpu.setSubComponent("generator", "miranda.GUPSGenerator")
 SC_cpugen.addParams({
 	"verbose" : 0,
 	"count" : 100,
-	"max_address" : str(virt_region_size_mb * MB) + "B",
+	"max_address" : str(virt_region_size_pages * 4 * KB) + "B",
 })
 
 
@@ -73,7 +75,7 @@ C_l1cache.addParams({
         "L1" : "1",
         "cache_size" : "8KB",
         "debug" : "1",          
-        "debug_level" : "10",    
+        "debug_level" : "1",    
         "debug_addresses": "[]",
         "verbose": "1",
 })

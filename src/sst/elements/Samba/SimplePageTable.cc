@@ -67,10 +67,15 @@ void PageTable::handleMappingEvent(SST::Event *ev) {
 
     switch(map_ev->type) {
         case PageTable::MappingEvent::eventType::MAP_PAGE:
-            out->verbose(_L3_, "Mapping page! (NOT IMPLEMENTED)\n");
+            out->verbose(_L3_, "Mapping page at VA=0x%lx, PA=0x%lx\n", map_ev->v_addr, map_ev->p_addr);
+            PT_mapPage(map_ev->v_addr, map_ev->p_addr, 0); //no flags for now
+            //TODO: we'll have multiple maps keyed by map_ev->map_id
             break;
+
         case PageTable::MappingEvent::eventType::UNMAP_PAGE:
-            out->verbose(_L3_, "Unmapping page! (NOT IMPLEMENTED)\n");
+            out->verbose(_L3_, "Unmapping page at VA=0x%lx\n", map_ev->v_addr);
+            PT_unmapPage(map_ev->v_addr, 0); //no flags for now
+            //TODO: we'll have multiple maps keyed by map_ev->map_id
             break;
         default:
             out->verbose(_L1_, "Event type %s not handled (noop)\n", map_ev->getTypeString().c_str());
@@ -148,38 +153,113 @@ MemEvent* PageTable::translateMemEvent(MemEvent *mEv) {
 
 
 Addr PageTable::translatePage(Addr virtPageAddr) {
-    // It's a pure function, yay!
+    // Returns physical page addr
     // On page fault, crash out (TODO: change this?)
+    
+    PageTableEntry ent = PT_lookup(virtPageAddr);
 
-    //==== TODO TEMP DEBUGGING:
-    // to just check if the plumbing works, lets manually hardcode the fixed-region mapping from simpleTLB
-    //
-    const Addr fixed_mapping_va_start = 0x0;
-    const Addr fixed_mapping_pa_start = 0xF000000;
-    const Addr fixed_mapping_len      = 128 * MB;
+    
+    if(!ent.isValid()) {
+        //// unmapped pages are a page fault
+        //sst_assert(ent.isValid(), CALL_INFO, -1, "ERROR: Pagetable page fault (no mapping at VA=0x%lx)\n", ent.v_addr);
 
 
-    //check bounds
-    //TODO: send proper page fault here once implmemented
-    //TODO: check MemEvent size?
-    //
-    if(virtPageAddr < fixed_mapping_va_start || virtPageAddr >= fixed_mapping_va_start + fixed_mapping_len) {
-        ////Option 1: anything not explicitly mapped is page fault
-        //out->fatal(CALL_INFO, -1, "Page fault: virtual addr 0x%lx is outside of mapped range: 0x%lx - 0x%lx\n", virtPageAddr, fixed_mapping_va_start, fixed_mapping_va_start + fixed_mapping_len-1);
-
-        ////Option 2: all other addresses get mapped to themselves (might be useful for e.g. faking multiprocess)
+        //TODO TEMP: for now we let the default mapping play out if no entry found
         return virtPageAddr;
+
+    } else {
+        return ent.p_addr;
+    }
+    
+    
+
+    //     //==== TODO TEMP DEBUGGING:
+    //     // to just check if the plumbing works, lets manually hardcode the fixed-region mapping from simpleTLB
+    //     //
+    //     const Addr fixed_mapping_va_start = 0x0;
+    //     const Addr fixed_mapping_pa_start = 0xF000000;
+    //     const Addr fixed_mapping_len      = 128 * MB;
+
+
+    //     //check bounds
+    //     //TODO: send proper page fault here once implmemented
+    //     //TODO: check MemEvent size?
+    //     //
+    //     if(virtPageAddr < fixed_mapping_va_start || virtPageAddr >= fixed_mapping_va_start + fixed_mapping_len) {
+    //         ////Option 1: anything not explicitly mapped is page fault
+    //         //out->fatal(CALL_INFO, -1, "Page fault: virtual addr 0x%lx is outside of mapped range: 0x%lx - 0x%lx\n", virtPageAddr, fixed_mapping_va_start, fixed_mapping_va_start + fixed_mapping_len-1);
+
+    //         ////Option 2: all other addresses get mapped to themselves (might be useful for e.g. faking multiprocess)
+    //         return virtPageAddr;
+    //     }
+
+
+    //     // Add the VA->PA offset. This should work correctly whether
+    //     // PA or VA are > or <, since everything is uint64_t
+    //     Addr pPageAddr = virtPageAddr + (fixed_mapping_pa_start - fixed_mapping_va_start);
+
+    //     //Addr pPage = virtPageAddr + SST::MemHierarchy::mebi; //offset by 1MiB, 0x10'0000
+    //     //Addr pPage = vPage + 0x400; //offset by 1KB
+
+    //     assert((pPageAddr & BOTTOM_N_BITS(12)) == 0); //we should have enforced this by the time we get here
+
+    //     return pPageAddr;
+}
+
+
+
+// ========================================================================
+//
+//     PAGE TABLE DATA STRUCTURE (TODO: THIS SHOULD BE IT'S OWN, NON-COMPONENT CLASS)
+//      (especially since we'll need more than one of it)
+//
+// ========================================================================
+
+
+//typedef struct { //must be 4k aliged
+//    Addr v_addr;
+//    Addr p_addr;
+//    uint64_t flags; //TODO: add getters and setters? (isValid, etc)
+//} PageTableEntry;
+//
+//std::map<MemHierarchy::Addr, PageTableEntry> PT_map;
+
+void PageTable::PT_mapPage(Addr v_addr, Addr p_addr, uint64_t flags) {
+    sst_assert(IS_4K_ALIGNED(v_addr) && IS_4K_ALIGNED(p_addr), CALL_INFO, -1, "ERROR: addresses must be 4K aligned\n");
+
+    //error if already exists (QUESTION: should this more permissive?)   
+    auto it = PT_map.find(v_addr);
+    sst_assert(it == PT_map.end(), CALL_INFO, -1, "ERROR: PageTable mapping page over an existing mapping at VA=0x%lx\n", v_addr);
+
+    PT_map[v_addr] = PageTableEntry(v_addr, p_addr, flags | PT_FL_VALID);
+}
+
+void PageTable::PT_unmapPage(Addr v_addr, uint64_t flags) {
+    sst_assert(IS_4K_ALIGNED(v_addr), CALL_INFO, -1, "ERROR: addresses must be 4K aligned\n");
+
+    //error if it does not exist (QUESTION: should this more permissive?)   
+    auto it = PT_map.find(v_addr);
+    sst_assert(it != PT_map.end(), CALL_INFO, -1, "ERROR: PageTable unmap called when no mapping exists at VA=0x%lx\n", v_addr);
+
+    PT_map.erase(it);
+}
+
+//TODO: add a PT exists call? because we can have either the PTE doesn't exist in PT_map or it exists but is invalid
+
+PageTable::PageTableEntry PageTable::PT_lookup(Addr v_addr) {
+    //returns (by value) the pagetable entry
+    //if no mapped page, returns a pageTableEntry with isValid() false and addresses set to -1)
+    
+    sst_assert(IS_4K_ALIGNED(v_addr), CALL_INFO, -1, "ERROR: address must be 4K aligned\n");
+    //TODO: with hugepages, should this be made more lenient? probably
+    
+    auto it = PT_map.find(v_addr);
+
+    if (it == PT_map.end()) { //if not found
+        return PageTableEntry(v_addr, -1, 0 & ~PT_FL_VALID); //just to be explicit, 
+    } else {
+        PageTableEntry ent = it->second;
+        return ent;
     }
 
-
-    // Add the VA->PA offset. This should work correctly whether
-    // PA or VA are > or <, since everything is uint64_t
-    Addr pPageAddr = virtPageAddr + (fixed_mapping_pa_start - fixed_mapping_va_start);
-
-    //Addr pPage = virtPageAddr + SST::MemHierarchy::mebi; //offset by 1MiB, 0x10'0000
-    //Addr pPage = vPage + 0x400; //offset by 1KB
-
-    assert((pPageAddr & BOTTOM_N_BITS(12)) == 0); //we should have enforced this by the time we get here
-
-    return pPageAddr;
 }

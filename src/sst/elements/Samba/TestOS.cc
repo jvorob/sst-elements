@@ -95,7 +95,7 @@ bool TestOSComponent::clockTick(SST::Cycle_t x)
             pt_iface->createMapping(1);
 
             state++;
-            delay = 100;
+            delay = 5;
             break;
         }
 
@@ -104,10 +104,11 @@ bool TestOSComponent::clockTick(SST::Cycle_t x)
                 { break; }
 
             // 4k pages are at 0x0000, 0x1000, 0x2000, 0x3000
-            // lets map some high page to page 7: 0x7000
-            pt_iface->mapPage(1, 0xFF000, 0x7000, 0);
+            // lets map page 7 to some higher page: 7: 0x7000
+            out->verbose(CALL_INFO, 1, 0, "tick %d!\n", tick_counter);
+            pt_iface->mapPage(1, 0x7000, 0xFF000, 0);
             state++;
-            delay = 100;
+            delay = 60;
             break;
         }
 
@@ -115,9 +116,10 @@ bool TestOSComponent::clockTick(SST::Cycle_t x)
             if (delay > 0)
                 { break; }
 
-            pt_iface->unmapPage(1, 0xFF000, 0);
+            out->verbose(CALL_INFO, 1, 0, "tick %d!\n", tick_counter);
+            pt_iface->unmapPage(1, 0x7000, 0);
             state++;
-            delay = 100;
+            delay = 60;
             break;
         }
 

@@ -175,11 +175,52 @@ class PageTable : public SST::Component {
         void handleTranslationEvent(Event *ev); // translate memEvents from tlbs
 
     private:
-        // SST Output object, for printing, error messages, etc.
-        SST::Output* out;
+    
+
+        // === Private Members:
+        SST::Output* out; // SST Output object, for printing, error messages, etc.
 
         SST::Link* link_from_os;  // link to whoever is creating mappings
         SST::Link* link_from_tlb; // incoming memEvent translation requests
+
+        // ==== Page-table data structure function: eventually will be in own class
+        // TODO: split out into own class
+        
+        
+        //== Flags?
+        //TODO: come up with more of these and number them properly
+        static const uint64_t PT_FL_VALID = 1 << 0;
+        
+        class PageTableEntry {
+            public:
+
+            //must be 4k aligned
+            Addr v_addr;
+            Addr p_addr;
+            uint64_t flags; //TODO: add getters and setters? (isValid, etc)
+
+            //Empty page table entry should be invalid
+            PageTableEntry(): v_addr(-1), p_addr(-1), flags(0 & ~PT_FL_VALID) {};
+
+            PageTableEntry(Addr v, Addr p, uint64_t flags):
+                v_addr(v),
+                p_addr(p),
+                flags(flags)
+            {}
+
+            bool isValid() {
+                return (flags & PT_FL_VALID) != 0;
+            }
+        };
+
+        std::map<MemHierarchy::Addr, PageTableEntry> PT_map;
+        void PT_mapPage(Addr v_addr, Addr p_addr, uint64_t flags);
+        void PT_unmapPage(Addr v_addr, uint64_t flags);
+        PageTableEntry PT_lookup(Addr v_addr);
+        // ====================================
+
+        
+        // === Private Methods:
 
 
         //Transates mEv, returns new m_ev
