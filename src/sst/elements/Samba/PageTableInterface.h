@@ -50,7 +50,7 @@ class PageTableInterface : public SST::SubComponent {
             // {"emulate_faults", "blah blah description description", "0"},
         )
 
-        // {"Port name", "Description", { "list of event types that the port can handle"} }  
+        // {"Port name", "Description", { "list of event types that the port can handle"} }
         SST_ELI_DOCUMENT_PORTS(
             {"pagetable_link", "link to SimplePageTable component that this controls", {}},
             //{"cpu_to_mmu%(corecount)d", "Each Samba has link to its core", {}},
@@ -65,9 +65,9 @@ class PageTableInterface : public SST::SubComponent {
             out = new SST::Output("PageTableInterface[@f:@l:@p>] ", verbosity, 0, SST::Output::STDOUT);
             out->verbose(_L1_, "Creating PageTableInterface\n");
 
-            
 
-            out_link = configureLink("pagetable_link", 
+
+            out_link = configureLink("pagetable_link",
                 new Event::Handler<PageTableInterface>(this, &PageTableInterface::handleEvent));
 
             // Failure usually means the user didn't connect the port in the input file
@@ -123,11 +123,11 @@ class PageTableInterface : public SST::SubComponent {
 
             out->verbose(_L3_, "got event response: %s\n", map_event->getString().c_str());
         }
-    
+
 
     private:
-        // SST Output object, for printing, error messages, etc.        
-        SST::Output* out;                                               
+        // SST Output object, for printing, error messages, etc.
+        SST::Output* out;
 
         SST::Link *out_link;
 

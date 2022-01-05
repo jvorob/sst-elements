@@ -7,7 +7,7 @@
 #include <sst/core/link.h>
 #include <sst/core/timeConverter.h>
 #include <sst/core/interfaces/simpleMem.h>
-// 
+//
 // #include <sst/core/output.h>
 
 // #include <cstring>
@@ -15,11 +15,11 @@
 // #include <fstream>
 // #include <sstream>
 // #include <map>
-// 
+//
 // #include <stdio.h>
 // #include <stdint.h>
 // #include <poll.h>
-// 
+//
 // #include "TLBhierarchy.h"
 // #include "PageTableWalker.h"
 // #include "PageFaultHandler.h"
@@ -39,15 +39,15 @@ namespace SambaComponent {
 class SimpleTLB : public SST::Component {
     public:
 
-        // REGISTER THIS COMPONENT INTO THE ELEMENT LIBRARY                                               
-        SST_ELI_REGISTER_COMPONENT(                                                                       
-            SimpleTLB,                           // Component class                                        
-            "Samba",             // Component library (for Python/library lookup)          
-            "SimpleTLB",                         // Component name (for Python/library lookup)             
-            SST_ELI_ELEMENT_VERSION(1,0,0),     // Version of the component (not related to SST version)  
-            "Simple TLB Component",     // Description                                            
-            COMPONENT_CATEGORY_UNCATEGORIZED    // Category                                               
-        )                                                                                                 
+        // REGISTER THIS COMPONENT INTO THE ELEMENT LIBRARY
+        SST_ELI_REGISTER_COMPONENT(
+            SimpleTLB,                           // Component class
+            "Samba",             // Component library (for Python/library lookup)
+            "SimpleTLB",                         // Component name (for Python/library lookup)
+            SST_ELI_ELEMENT_VERSION(1,0,0),     // Version of the component (not related to SST version)
+            "Simple TLB Component",     // Description
+            COMPONENT_CATEGORY_UNCATEGORIZED    // Category
+        )
 
 
         SST_ELI_DOCUMENT_STATISTICS(
@@ -85,7 +85,7 @@ class SimpleTLB : public SST::Component {
             // {"emulate_faults", "This indicates if the page faults should be emulated through requesting pages from page fault handler", "0"},
         )
 
-        // {"Port name", "Description", { "list of event types that the port can handle"} }  
+        // {"Port name", "Description", { "list of event types that the port can handle"} }
         SST_ELI_DOCUMENT_PORTS(
             {"high_network", "Link to cpu", {"MemHierarchy.MemEventBase"}},
             {"low_network", "Link toward caches", {"MemHierarchy.MemEventBase"}},
@@ -111,28 +111,28 @@ class SimpleTLB : public SST::Component {
         // Event handler, called when an event is received on high or low link
         typedef enum { FROM_HIGH=0, FROM_LOW, FROM_PT} enum_event_src ; //for tagging handlers
         void handleEvent(SST::Event *ev, enum_event_src from);
-                                                                        
-        // Clock handler, called on each clock cycle                    
-        virtual bool clockTick(SST::Cycle_t);                            
-                                                                        
+
+        // Clock handler, called on each clock cycle
+        virtual bool clockTick(SST::Cycle_t);
+
         // Init?? Called by someone?? Used to pass mem/cache init events back and forth
         void init(unsigned int phase);
-                                                                        
-        // Statistic                                                    
-        //Statistic<uint64_t>* bytesReceived;                             
+
+        // Statistic
+        //Statistic<uint64_t>* bytesReceived;
         Statistic<uint64_t>* statReadRequests; //NOT IMPLEMENTED
-                                                                        
-                                                                        
-                                                                        
+
+
+
 
 
 
 
     private:
-        // SST Output object, for printing, error messages, etc.        
-        SST::Output* out;                                               
+        // SST Output object, for printing, error messages, etc.
+        SST::Output* out;
 
-        // Links                                                        
+        // Links
         SST::Link* link_high;  // to cpu
         SST::Link* link_low;  // to cpu
         SST::Link* link_pagetable;  // to pagetable

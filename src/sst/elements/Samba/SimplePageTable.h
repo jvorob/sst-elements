@@ -23,25 +23,25 @@ class PageTable : public SST::Component {
 
     /*     PageTable Documentation:
      *
-     * 
+     *
      * Stores one or more memory mappigns (i.e. page tables)
      * Can edit mappings with MappingEvents to port 'link_from_os':
      * If a value is not specified, then it is 'dont-care' for that method
      *
      * - MAP_PAGE(id, v_addr, p_addr, flags) //flags will hold if huge page
-     * - UNMAP_PAGE(id, v_addr) 
+     * - UNMAP_PAGE(id, v_addr)
      *
-     *  // FOR LATER:  (when we support multiple mapping, will require TLB to send mapping id 
+     *  // FOR LATER:  (when we support multiple mapping, will require TLB to send mapping id
      *                  and so will require a special translationEvent with a field for that (or changing the memevents)
-     * - CREATE_MAPPING (id) 
+     * - CREATE_MAPPING (id)
      *
      *  // FOR LATER (once I add an anon page pool)
-     *  // anonymous page pool is 
+     *  // anonymous page pool is
      * - SET_ANON_POOL(id, p_addr, size?))
      * - MAP_ANON_PAGE(id, v_addr, flags)
      * - UNMAP_ANON_PAGE(id, v_addr, flags)
      *
-     * Future considerations: 
+     * Future considerations:
      * - can we remap existing pages? Should this be an error or a modify
      * - can we map a huge page over existing smaller pages? probably error
      * - Can we map pages into the anon page pool?
@@ -77,13 +77,13 @@ class PageTable : public SST::Component {
 
 
 
-    
+
     // For later??
     //enum { PAGE_FAULT, PAGE_FAULT_RESPONSE, PAGE_FAULT_SERVED, SHOOTDOWN, PAGE_REFERENCE, SDACK } Translate_EventType ;
 
 
     class MappingEvent; // map page, unmap page, etc
-    class TranslateEvent; // translate-virt-page;  page faults?; 
+    class TranslateEvent; // translate-virt-page;  page faults?;
 
 
 
@@ -115,16 +115,16 @@ class PageTable : public SST::Component {
             Addr            v_addr;
             Addr            p_addr;
             int64_t         size;
-            
+
             // Constructor
-            MappingEvent() : SST::Event(), 
+            MappingEvent() : SST::Event(),
                 type(eventType::ERR_EVENT),
                 v_addr(0),
                 p_addr(0),
                 size(0)
             {}
 
-            MappingEvent(eventType t, uint64_t map_id, Addr v_addr, Addr p_addr) : SST::Event(), 
+            MappingEvent(eventType t, uint64_t map_id, Addr v_addr, Addr p_addr) : SST::Event(),
                 type(t),
                 map_id(map_id),
                 v_addr(v_addr),
@@ -152,8 +152,8 @@ class PageTable : public SST::Component {
         public:
             std::string getString() {
                 char str_buff[512];
-                snprintf(str_buff, sizeof(str_buff), 
-                        "<MappingEvent: type: %s, VA 0x%lx, PA 0x%lx, size: 0x%lx>", 
+                snprintf(str_buff, sizeof(str_buff),
+                        "<MappingEvent: type: %s, VA 0x%lx, PA 0x%lx, size: 0x%lx>",
                         getEventName(type).c_str(), v_addr, p_addr, size);
                 return std::string(str_buff);
             }
@@ -171,8 +171,8 @@ class PageTable : public SST::Component {
         void handleTranslationEvent(Event *ev); // translate memEvents from tlbs
 
     private:
-        // SST Output object, for printing, error messages, etc.        
-        SST::Output* out;                                               
+        // SST Output object, for printing, error messages, etc.
+        SST::Output* out;
 
         SST::Link* link_from_os;  // link to whoever is creating mappings
         SST::Link* link_from_tlb; // incoming memEvent translation requests

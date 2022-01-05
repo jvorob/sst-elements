@@ -42,24 +42,24 @@ PageTable::PageTable(SST::ComponentId_t id, SST::Params& params): Component(id) 
 // Page mappings requests from OS
 void PageTable::handleMappingEvent(SST::Event *ev) {
     auto m_ev  = dynamic_cast<PageTable::MappingEvent*>(ev);
-    
+
     if (!m_ev) {
         out->fatal(CALL_INFO, -1, "Error! Bad Event Type received\n");
     }
 
-    
+
     out->verbose(_L3_, "Got mappingEvent: %s\n", m_ev->getString().c_str());
 }
 
 //Incoming MemEvents from TLBs, we need to translate them
 void PageTable::handleTranslationEvent(SST::Event *ev) {
     auto mem_ev  = dynamic_cast<MemHierarchy::MemEventBase*>(ev);
-    
+
     if (!mem_ev) {
         out->fatal(CALL_INFO, -1, "Error! Bad Event Type received");
     }
 
-    
+
     out->verbose(_L3_, "Got translation request (MemEventBase): %s\n", mem_ev->getVerboseString().c_str());
 
 }

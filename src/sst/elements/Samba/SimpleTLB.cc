@@ -72,10 +72,10 @@ SimpleTLB::SimpleTLB(SST::ComponentId_t id, SST::Params& params): Component(id) 
 	UnitAlgebra fixed_mapping_len_ua = UnitAlgebra(fixed_mapping_len_str); //parse it
 
     fixed_mapping_len = fixed_mapping_len_ua.getRoundedValue(); //extract int val
-    
+
     //NOTE: printed string won't be exactly what user entered: we modified it in-place with fixByteUnits
     if (!fixed_mapping_len_ua.hasUnits("") && !fixed_mapping_len_ua.hasUnits("B")) {
-        out->fatal(CALL_INFO, -1, "Invalid param: fixed_mapping_len - must have units of bytes (B). " 
+        out->fatal(CALL_INFO, -1, "Invalid param: fixed_mapping_len - must have units of bytes (B). "
                                     "Ex: '8B', '40MB'; You entered: '%s'", fixed_mapping_len_str.c_str());
     }
 
@@ -84,13 +84,13 @@ SimpleTLB::SimpleTLB(SST::ComponentId_t id, SST::Params& params): Component(id) 
     // if len == 0, mapping is disabled. Else: enable and sanity-check
 	if (fixed_mapping_len != 0) {
         if(PAGE_OFFSET_4K(fixed_mapping_va_start) != 0)
-            { out->fatal(CALL_INFO, -1, "Error! 'fixed_mapping_va_start' not 4k aligned in %s. Got value '0x%lx'\n", 
+            { out->fatal(CALL_INFO, -1, "Error! 'fixed_mapping_va_start' not 4k aligned in %s. Got value '0x%lx'\n",
                     getName().c_str(), fixed_mapping_va_start); }
         if(PAGE_OFFSET_4K(fixed_mapping_pa_start) != 0)
-            { out->fatal(CALL_INFO, -1, "Error! 'fixed_mapping_pa_start' not 4k aligned in %s. Got value '0x%lx'\n", 
+            { out->fatal(CALL_INFO, -1, "Error! 'fixed_mapping_pa_start' not 4k aligned in %s. Got value '0x%lx'\n",
                     getName().c_str(), fixed_mapping_pa_start); }
         if(PAGE_OFFSET_4K(fixed_mapping_len) != 0)
-            { out->fatal(CALL_INFO, -1, "Error! 'fixed_mapping_len' not 4k aligned in %s. Got value: '0x%lx'\n", 
+            { out->fatal(CALL_INFO, -1, "Error! 'fixed_mapping_len' not 4k aligned in %s. Got value: '0x%lx'\n",
                     getName().c_str(), fixed_mapping_len); }
 
         if(fixed_mapping_len < 0) {
@@ -98,7 +98,7 @@ SimpleTLB::SimpleTLB(SST::ComponentId_t id, SST::Params& params): Component(id) 
         }
 
         out->verbose(_L1_, "Setting SimpleTLB with fixed mapping: %ldKB region at VA:0x%lx-0x%lx maps to PA:0x%lx\n",
-                        fixed_mapping_len / 1024, fixed_mapping_va_start, 
+                        fixed_mapping_len / 1024, fixed_mapping_va_start,
                         fixed_mapping_va_start+fixed_mapping_len-1, fixed_mapping_pa_start);
     }
 
@@ -106,11 +106,11 @@ SimpleTLB::SimpleTLB(SST::ComponentId_t id, SST::Params& params): Component(id) 
 
     // Wire up our links to event handlers
     // One function for each link (since we're always moving memevents around, so pass in enum for source)
-    link_high = configureLink("high_network", 
+    link_high = configureLink("high_network",
             new Event::Handler<SimpleTLB, enum_event_src>(this, &SimpleTLB::handleEvent, FROM_HIGH));
-    link_low = configureLink("low_network",  
+    link_low = configureLink("low_network",
             new Event::Handler<SimpleTLB, enum_event_src>(this, &SimpleTLB::handleEvent, FROM_LOW));
-    link_pagetable = configureLink("pagetable_link", 
+    link_pagetable = configureLink("pagetable_link",
             new Event::Handler<SimpleTLB, enum_event_src>(this, &SimpleTLB::handleEvent, FROM_PT));
 
     // Failure usually means the user didn't connect the port in the input file
@@ -208,7 +208,7 @@ void SimpleTLB::handleEvent(SST::Event *ev, enum_event_src from) {
     } else if (from == FROM_PT) { // translated response from pagetable
         out->verbose(_L3_, "Got mem event back from pagetable, NOT IMPLEMENTED \n");
     } else {
-        sst_assert(false, CALL_INFO, -1, "Error in %s: bad enum value in handleEvent", getName().c_str()); 
+        sst_assert(false, CALL_INFO, -1, "Error in %s: bad enum value in handleEvent", getName().c_str());
         // shouldn't happen unless I typoed something
     }
 
@@ -303,7 +303,7 @@ Addr SimpleTLB::translatePage(Addr virtPageAddr) {
     if(virtPageAddr < fixed_mapping_va_start || virtPageAddr >= fixed_mapping_va_start + fixed_mapping_len) {
         ////Option 1: anything not explicitly mapped is page fault
         //out->fatal(CALL_INFO, -1, "Page fault: virtual addr 0x%lx is outside of mapped range: 0x%lx - 0x%lx\n", virtPageAddr, fixed_mapping_va_start, fixed_mapping_va_start + fixed_mapping_len-1);
-        
+
         ////Option 2: all other addresses get mapped to themselves (might be useful for e.g. faking multiprocess)
         return virtPageAddr;
     }
