@@ -54,10 +54,12 @@ class TestOSComponent : public SST::Component {
 
         void handlePageTableEvent(Event *ev);
 
+        bool clockTick(SST::Cycle_t x); //clock for running state machine
+
     private:
         PageTableInterface *pt_iface;
 
-        SST::Output* out;                                               
+        SST::Output* out;
 
         //  // Event handler, called when an event is received on high or low link
         //  void handleEvent(SST::Event *ev, bool is_low);

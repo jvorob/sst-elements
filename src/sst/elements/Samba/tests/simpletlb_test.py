@@ -19,7 +19,7 @@ comp_cpu.addParams({
 cpugen = comp_cpu.setSubComponent("generator", "miranda.GUPSGenerator")
 cpugen.addParams({
 	"verbose" : 0,
-	"count" : 10000,
+	"count" : 100,
 	"max_address" : str(virt_region_size_mb * MB) + "B",
 })
 

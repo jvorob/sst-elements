@@ -8,7 +8,7 @@ import sst
 
 # Define SST core options
 sst.setProgramOption("timebase", "1ps")
-sst.setProgramOption("stopAtCycle", "1 ns")
+sst.setProgramOption("stopAtCycle", "0 ns")
 
 
 memory_mb = 1024 #1GB
@@ -21,11 +21,20 @@ GB=1024 * MB
 
 C_test_os = sst.Component("testos", "Samba.TestOS")
 SC_pt_interface = C_test_os.setSubComponent("pagetable_interface", "Samba.PageTableInterface")
+SC_pt_interface.addParams({
+    "verbose": 5,
+})
+
+C_pagetable = sst.Component("pagetable", "Samba.SimplePageTable")
+C_pagetable.addParams({
+    "verbose": 5,
+})
 
 # Define the simulation components
 C_cpu = sst.Component("cpu", "miranda.BaseCPU")
 C_cpu.addParams({
 	"verbose" : 1,
+        "maxmemreqpending": 1, #lets try to slow it down slightly
 })
 SC_cpugen = C_cpu.setSubComponent("generator", "miranda.GUPSGenerator")
 SC_cpugen.addParams({
@@ -77,13 +86,12 @@ SC_memory.addParams({
 # ====== Custom TLB component
 C_tlb = sst.Component("TLB", "Samba.SimpleTLB")
 C_tlb.addParams({
-    "verbose": 3,
+    "verbose": 1,
     "fixed_mapping_va_start": "0x0",
     "fixed_mapping_pa_start": "0xF000000",
     "fixed_mapping_len": "128MB",
 })
 
-C_pagetable = sst.Component("pagetable", "Samba.SimplePageTable")
 
 
 

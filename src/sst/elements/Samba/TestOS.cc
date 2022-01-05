@@ -45,12 +45,21 @@ TestOSComponent::TestOSComponent(SST::ComponentId_t id, SST::Params& params): Co
     out->verbose(_L1_, "Creating TestOS component...\n");
 
 
+    // Set up our interface to the page table
     pt_iface = loadUserSubComponent<PageTableInterface>("pagetable_interface");
-    if (pt_iface == NULL) 
+    if (pt_iface == NULL)
         { out->fatal(CALL_INFO, -1, "Error - unable to load 'pagetable_interface' subcomponent"); }
-
-    //
     pt_iface->initialize(NULL, new Event::Handler<TestOSComponent>(this, &TestOSComponent::handlePageTableEvent));
+
+
+    //Tell the simulation not to end until we're ready
+    registerAsPrimaryComponent();
+    primaryComponentDoNotEndSim();
+
+
+    // Setup clock for running state machine
+	std::string cpu_clock = params.find<std::string>("clock", "1GHz");
+	registerClock( cpu_clock, new Clock::Handler<TestOSComponent>(this, &TestOSComponent::clockTick ) );
 }
 
 TestOSComponent::~TestOSComponent() {
@@ -65,3 +74,76 @@ void TestOSComponent::handlePageTableEvent(Event *ev) {
 }
 
 
+
+// ================= Manual coding / state machine stuff
+
+//noop for now, but we'll need it later when delays are a thing
+bool TestOSComponent::clockTick(SST::Cycle_t x)
+{
+    //we want to run a quick-and-dirty little state machine here
+    //lets make some variables:
+    static int tick_counter = 0;
+    static int state = 0;
+    static int delay = 0;
+
+    tick_counter++;
+    delay = (delay <= 0)?  0 : delay-1; //counts down
+
+    switch(state) {
+        case 0: {
+            //Just send out one event
+            pt_iface->createMapping(1);
+
+            state++;
+            delay = 100;
+            break;
+        }
+
+        case 1: { // Wait until delay ends, then send a mapPage
+            if (delay > 0)
+                { break; }
+
+            // 4k pages are at 0x0000, 0x1000, 0x2000, 0x3000
+            // lets map some high page to page 7: 0x7000
+            pt_iface->mapPage(1, 0xFF000, 0x7000, 0);
+            state++;
+            delay = 100;
+            break;
+        }
+
+        case 2: { //Wait for a while, then unmap that page
+            if (delay > 0)
+                { break; }
+
+            pt_iface->unmapPage(1, 0xFF000, 0);
+            state++;
+            delay = 100;
+            break;
+        }
+
+
+        case 3: {
+            if (delay > 0)
+                { break; }
+
+            out->verbose(CALL_INFO, 1, 0, "TestOSComponent Done!\n");
+            state++;
+
+            // Tell SST that it's OK to end the simulation (once all primary components agree, simulation will end)
+            primaryComponentOKToEndSim();
+
+            // Retrun true to indicate that this clock handler should be disabled
+            return true;
+        }
+
+    }
+
+
+	// We tick the MMU hierarchy of each core
+	//for(uint32_t i = 0; i < core_count; ++i)
+		//TLB[i]->tick(x);
+
+
+    // return false to indicate clock handler shouldn't be disabled
+	return false;
+}
