@@ -146,7 +146,6 @@ class SimpleTLB : public SST::Component {
         //Transates mEv, returns new m_ev
         //TODO: this will need to return either the result, or some sort of stall-handle in case of a TLB miss
         SST::MemHierarchy::MemEvent* translateMemEvent(SST::MemHierarchy::MemEvent *mEv);
-
         SST::MemHierarchy::Addr translatePage(SST::MemHierarchy::Addr virtPageAddr);
 
 };

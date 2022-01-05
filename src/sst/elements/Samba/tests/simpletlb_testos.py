@@ -18,7 +18,20 @@ MB=1024 * KB
 GB=1024 * MB
 
 
+#================================== Components:
 
+
+# ====== Custom TLB component
+C_tlb = sst.Component("TLB", "Samba.SimpleTLB")
+C_tlb.addParams({
+    "verbose": 3,
+    "fixed_mapping_va_start": "0x0",
+    "fixed_mapping_pa_start": "0xF000000",
+    "fixed_mapping_len": "128MB",
+})
+
+
+# ====== OS and PT interface, PageTable
 C_test_os = sst.Component("testos", "Samba.TestOS")
 SC_pt_interface = C_test_os.setSubComponent("pagetable_interface", "Samba.PageTableInterface")
 SC_pt_interface.addParams({
@@ -29,6 +42,10 @@ C_pagetable = sst.Component("pagetable", "Samba.SimplePageTable")
 C_pagetable.addParams({
     "verbose": 5,
 })
+
+
+
+# ====== Standard components (cpu, caches, mem)
 
 # Define the simulation components
 C_cpu = sst.Component("cpu", "miranda.BaseCPU")
@@ -61,15 +78,6 @@ C_l1cache.addParams({
         "verbose": "1",
 })
 
-# Tell SST what statistics handling we want
-sst.setStatisticLoadLevel(2)
-# Enable statistics outputs
-C_cpu.enableAllStatistics({"type":"sst.AccumulatorStatistic"})
-C_l1cache.enableAllStatistics({"type":"sst.AccumulatorStatistic"})
-#comp_l1cache.enableStatistics(["GetS_recv","GetX_recv"])
-
-
-
 # ====== Memory
 C_memctrl = sst.Component("memory", "memHierarchy.MemController")
 C_memctrl.addParams({
@@ -83,21 +91,22 @@ SC_memory.addParams({
 
 
 
-# ====== Custom TLB component
-C_tlb = sst.Component("TLB", "Samba.SimpleTLB")
-C_tlb.addParams({
-    "verbose": 1,
-    "fixed_mapping_va_start": "0x0",
-    "fixed_mapping_pa_start": "0xF000000",
-    "fixed_mapping_len": "128MB",
-})
+
+
+#================================== Statistics:
+
+# Tell SST what statistics handling we want
+sst.setStatisticLoadLevel(2)
+# Enable statistics outputs
+C_cpu.enableAllStatistics({"type":"sst.AccumulatorStatistic"})
+C_l1cache.enableAllStatistics({"type":"sst.AccumulatorStatistic"})
+#comp_l1cache.enableStatistics(["GetS_recv","GetX_recv"])
 
 
 
 
+#================================== Links:
 
-
-#=========== SetupLinks
 # Define the simulation links
 #link_cpu_mmu_link = sst.Link("link_cpu_mmu_link")
 #link_cpu_mmu_link.connect( (comp_cpu, "cache_link", "50ps"), (mmu, "cpu_to_mmu0", "50ps") )

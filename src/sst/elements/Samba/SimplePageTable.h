@@ -158,6 +158,10 @@ class PageTable : public SST::Component {
                 return std::string(str_buff);
             }
 
+            std::string getTypeString() {
+                return getEventName(type);
+            }
+
     }; //class MappingEvent
 
 
@@ -178,7 +182,11 @@ class PageTable : public SST::Component {
         SST::Link* link_from_tlb; // incoming memEvent translation requests
 
 
-        // void handleTranslateEvent(){} //TODO
+        //Transates mEv, returns new m_ev
+        SST::MemHierarchy::MemEvent* translateMemEvent(SST::MemHierarchy::MemEvent *mEv);
+
+        //Pure function to translate just a virt addr to physaddr
+        SST::MemHierarchy::Addr      translatePage(SST::MemHierarchy::Addr virtPageAddr);
 };
 
 } //namespace SambaComponent

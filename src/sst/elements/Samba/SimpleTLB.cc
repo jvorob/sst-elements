@@ -160,6 +160,10 @@ void SimpleTLB::init(unsigned int phase) {
 
 void SimpleTLB::handleEvent(SST::Event *ev, enum_event_src from) {
     // Shared handler for all links
+    // Current strategy is:  mem events from above are sent to page table for translation,
+    //                       translated events from page table are sent down to mem (link_low)
+    //                       filled memevents from below are return up to cpu (link_high)
+    //
 
     MemEventBase* m_event_base = dynamic_cast<MemEventBase*>(ev);
 
@@ -170,7 +174,7 @@ void SimpleTLB::handleEvent(SST::Event *ev, enum_event_src from) {
 
 
 
-    out->verbose(_L3_, "Got MemEventBase: %s\n", m_event_base->getVerboseString().c_str());
+    out->verbose(_L3_, "Got MemEventBase from link %d: %s\n", (int)from, m_event_base->getVerboseString().c_str());
 
     if (from == FROM_LOW) { //event from cache going back up, just forward it
         out->verbose(_L3_, "Got mem event in SimpleTLB, forwarding to link_high\n");
@@ -180,24 +184,22 @@ void SimpleTLB::handleEvent(SST::Event *ev, enum_event_src from) {
 
 
     } else if (from == FROM_HIGH) { //event going down from cpu
+        //For now, just forward it to page table for translation
         MemEvent* m_event = dynamic_cast<MemEvent*>(ev);
 
-
         if (!m_event) {
-            out->verbose(_L5_, "Sending down memevent in SimpleTLB, not MemEvent, just forwarding to link_low\n");
+            out->verbose(_L5_, "Sending down MemEventBase (not MemEvent), forwarding to link_low\n");
             link_low->send(ev);
 
         } else { //Able to cast to a MemEvent
             //TODO: TEMP TESTING STUFF
-            out->verbose(_L3_, "TEMP:sending memevent to pagetable\n");
+            out->verbose(_L5_, "TEMP:sending memevent to pagetable\n");
             link_pagetable->send(ev);
 
 
-
             // MemEvent *translated_m_event = translateMemEvent(m_event);
-
             // out->verbose(_L5_, "Sending down translated MemEvent in SimpleTLB to link_low\n");
-
+            //
             // delete m_event;
             // link_low->send(translated_m_event);
 
@@ -206,10 +208,13 @@ void SimpleTLB::handleEvent(SST::Event *ev, enum_event_src from) {
         }
 
     } else if (from == FROM_PT) { // translated response from pagetable
-        out->verbose(_L3_, "Got mem event back from pagetable, NOT IMPLEMENTED \n");
-    } else {
+        out->verbose(_L5_, "Got translated memevent back from pagetable: %s, sending down to mem\n", 
+                            m_event_base->getVerboseString().c_str());
+        link_low->send(ev);
+
+
+    } else { // bad enum val, shouldn't happen unless I typoed something
         sst_assert(false, CALL_INFO, -1, "Error in %s: bad enum value in handleEvent", getName().c_str());
-        // shouldn't happen unless I typoed something
     }
 
     // Receiver has the responsiblity for deleting events
