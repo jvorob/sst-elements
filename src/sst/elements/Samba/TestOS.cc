@@ -68,7 +68,8 @@ TestOSComponent::~TestOSComponent() {
 
 
 void TestOSComponent::handlePageTableEvent(Event *ev) {
-    out->verbose(CALL_INFO, 1, 0, "Got event from pagetable_interface\n");
+    out->verbose(CALL_INFO, 1, 0, "Request completed in pagetable_interface, %d more requests in-flight\n", 
+                pt_iface->getNumPendingRequests());
 
     delete ev; //receiver has responsibility for deleting events
 }
@@ -104,27 +105,51 @@ bool TestOSComponent::clockTick(SST::Cycle_t x)
                 { break; }
 
             // 4k pages are at 0x0000, 0x1000, 0x2000, 0x3000
-            // lets map page 7 to some higher page: 7: 0x7000
+            // lets map pages 4-7 to address 0xF4000 - 0xF7000
             out->verbose(CALL_INFO, 1, 0, "tick %d!\n", tick_counter);
-            pt_iface->mapPage(1, 0x7000, 0xFF000, 0);
+            pt_iface->mapPage(1, 0x4000, 0xF4000, 0);
+            pt_iface->mapPage(1, 0x5000, 0xF5000, 0);
+            pt_iface->mapPage(1, 0x6000, 0xF6000, 0);
+            pt_iface->mapPage(1, 0x7000, 0xF7000, 0);
             state++;
-            delay = 60;
             break;
         }
 
-        case 2: { //Wait for a while, then unmap that page
+        case 2: { // wait until map-pages return
+            if(pt_iface->getNumPendingRequests() > 0)
+                { break; }
+
+            out->verbose(CALL_INFO, 1, 0, "All page-map requests completed, continuing\n");
+            delay = 60; // leave some time before we unmap in the next stage
+            state++;
+            break;
+        }
+
+        case 3: { //Wait for a while, then unmap that page
             if (delay > 0)
                 { break; }
 
+            //Unmap 4 and 5, leave 6 and 7 intact
             out->verbose(CALL_INFO, 1, 0, "tick %d!\n", tick_counter);
-            pt_iface->unmapPage(1, 0x7000, 0);
+            pt_iface->unmapPage(1, 0x4000, 0);
+            pt_iface->unmapPage(1, 0x5000, 0);
             state++;
-            delay = 60;
+            break;
+        }
+
+        case 4: { //Wait for unmap requests to complete
+            if(pt_iface->getNumPendingRequests() > 0)
+                { break; }
+
+            out->verbose(CALL_INFO, 1, 0, "All unmap requests completed, continuing\n");
+
+            delay = 60; // leave some time before we shut down in the next stage
+            state++;
             break;
         }
 
 
-        case 3: {
+        case 5: {
             if (delay > 0)
                 { break; }
 

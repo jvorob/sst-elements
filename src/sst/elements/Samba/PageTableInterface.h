@@ -61,6 +61,9 @@ class PageTableInterface : public SST::SubComponent {
         // ========================== Constructor
         //
         PageTableInterface(ComponentId_t id, Params &params) : SubComponent(id) {
+            num_pending_requests = 0;
+            parent_handler = NULL;
+
             int verbosity = params.find<int>("verbose", 5);
             out = new SST::Output("PageTableInterface[@f:@l:@p>] ", verbosity, 0, SST::Output::STDOUT);
             out->verbose(_L1_, "Creating PageTableInterface\n");
@@ -80,20 +83,27 @@ class PageTableInterface : public SST::SubComponent {
             delete out;
         }
 
-        // ==================== Event-sending Methods and Response handlers
-        //
+        // ==================== Setup response handler for parent component
 
         //Connect to link
         //TODO: for now link is not-implemented, we're hard-wiring it into SimpleTLB for testing
         // initialize with `initialize(link_ptr, new Event::Handler<ThisClass>(this, ThisClass::handleEvent))`
         void initialize (SST::Link *link, Event::HandlerBase *handler = NULL) {
+            parent_handler= handler;
             out->verbose(_L1_, "initialize(...) called\n");
         };
 
 
+        int getNumPendingRequests() {
+            //Number of requests still waiting for a response
+            //Parent object should use this in callback to determine when all mappings are in place
+            return num_pending_requests;
+        }
+        // ==================== Event-sending Methods
 
         void createMapping(uint64_t map_id) {
             out->verbose(_L3_, "Sending CREATE_MAPPING (does nothing for now)\n");
+            num_pending_requests++;
 
             auto type = PageTable::MappingEvent::eventType::CREATE_MAPPING;
             auto ev = new PageTable::MappingEvent(type, map_id, -1, -1);
@@ -103,6 +113,7 @@ class PageTableInterface : public SST::SubComponent {
 
         void mapPage(uint64_t map_id, Addr v_addr, Addr p_addr, uint64_t flags) {
             out->verbose(_L3_, "Sending MAP_PAGE\n");
+            num_pending_requests++;
 
             auto type = PageTable::MappingEvent::eventType::MAP_PAGE;
             auto ev = new PageTable::MappingEvent(type, map_id, v_addr, p_addr);
@@ -110,6 +121,8 @@ class PageTableInterface : public SST::SubComponent {
         }
         void unmapPage(uint64_t map_id, Addr v_addr, uint64_t flags) {
             out->verbose(_L3_, "Sending UNMAP_PAGE\n");
+            num_pending_requests++;
+
             auto type = PageTable::MappingEvent::eventType::UNMAP_PAGE;
             auto ev = new PageTable::MappingEvent(type, map_id, v_addr, -1);
             out_link->send(ev);
@@ -125,10 +138,24 @@ class PageTableInterface : public SST::SubComponent {
             }
 
             out->verbose(_L3_, "got event response: %s\n", map_event->getString().c_str());
+
+            num_pending_requests--;
+
+            //Should only happen if we get spurious incoming events from the page table?
+            //TODO: if we make page table send us stuff ever, this logic will have to change
+            sst_assert(num_pending_requests >= 0, CALL_INFO, -1, "ERROR: count of inflight events should be negative");
+
+            //forward to parent
+            if(parent_handler != NULL) {
+                (*parent_handler)(ev);
+            }
         }
 
 
     private:
+        int num_pending_requests;
+        Event::HandlerBase *parent_handler;
+
         // SST Output object, for printing, error messages, etc.
         SST::Output* out;
 
