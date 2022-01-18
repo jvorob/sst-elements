@@ -52,18 +52,51 @@ PageTable::PageTable(SST::ComponentId_t id, SST::Params& params): Component(id) 
 //
 // ========================================================================
 
+void PageTable::init(unsigned int phase) {
+	// We need to handle mapping events during the init phase
+    // (Before main simulation begins)
+
+    out->verbose(_L3_, "init(%d) called\n",phase);
+
+    SST::Event * ev;
+    while ((ev = link_from_os->recvInitData())) { //incoming from CPU, forward down
+        auto map_ev  = dynamic_cast<PageTable::MappingEvent*>(ev);
+        if (!map_ev) 
+            { out->fatal(CALL_INFO, -1, "Error! Bad Event Type received at init time\n"); }
+        out->verbose(_L3_, "Got mappingEvent at init time: %s\n", map_ev->getString().c_str());
+        
+        //delegate execution to inner function
+        PageTable::MappingEvent* resp_ev = handleMappingEventInner(map_ev);
+
+        link_from_os->sendInitData(resp_ev); //send back response
+    }
+
+
+}
+
 
 // Page mappings requests from OS
 void PageTable::handleMappingEvent(SST::Event *ev) {
     auto map_ev  = dynamic_cast<PageTable::MappingEvent*>(ev);
-
-    if (!map_ev) {
-        out->fatal(CALL_INFO, -1, "Error! Bad Event Type received\n");
-    }
-
+    if (!map_ev) 
+        { out->fatal(CALL_INFO, -1, "Error! Bad Event Type received\n"); }
 
     out->verbose(_L3_, "Got mappingEvent: %s\n", map_ev->getString().c_str());
 
+    //delegate body to inner function
+    PageTable::MappingEvent* resp_ev = handleMappingEventInner(map_ev);
+
+    out->verbose(_L3_, "Sending back response\n");
+    link_from_os->send(resp_ev);
+}
+
+
+
+// Handle page-mappings requests from OS
+// inner logic: doesn't send or receive anything:
+// returns a response mapping-event
+PageTable::MappingEvent* PageTable::handleMappingEventInner(PageTable::MappingEvent* map_ev) {
+    //map_ev should be non_null
 
     switch(map_ev->type) {
         case PageTable::MappingEvent::eventType::MAP_PAGE:
@@ -80,9 +113,12 @@ void PageTable::handleMappingEvent(SST::Event *ev) {
         default:
             out->verbose(_L1_, "Event type %s not handled (noop)\n", map_ev->getTypeString().c_str());
     }
-    out->verbose(_L3_, "Sending back response\n");
-    link_from_os->send(ev);
+
+    out->verbose(_L3_, "Responding with same event\n");
+    return map_ev;
 }
+
+
 
 //Incoming MemEvents from TLBs, we need to translate them
 void PageTable::handleTranslationEvent(SST::Event *ev) {

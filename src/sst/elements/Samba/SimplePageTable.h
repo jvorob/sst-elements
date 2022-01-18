@@ -172,7 +172,16 @@ class PageTable : public SST::Component {
 
 
         void handleMappingEvent(Event *ev); // handles event from OS: adjusts mappings, sends back response on link
+                                            // (delegates body to ...Inner() function)
         void handleTranslationEvent(Event *ev); // translate memEvents from tlbs
+
+
+        MappingEvent* handleMappingEventInner(MappingEvent *map_ev); 
+        // inner function to execute mapping events (called from init handler or main handler)
+        // returns response mapping_event
+
+        // = init stuff overrides
+        void init(unsigned int phase) override;  //called repeatedly during init (per each phase)
 
     private:
     

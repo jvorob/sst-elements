@@ -56,6 +56,11 @@ class TestOSComponent : public SST::Component {
 
         bool clockTick(SST::Cycle_t x); //clock for running state machine
 
+        // = init stuff overrides
+        void init(unsigned int phase) override;  //called repeatedly during init (per each phase)
+        void setup() override; //called between init and main phase
+
+
     private:
         PageTableInterface *pt_iface;
 

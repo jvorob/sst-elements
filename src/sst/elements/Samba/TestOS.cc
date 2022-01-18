@@ -78,6 +78,25 @@ void TestOSComponent::handlePageTableEvent(Event *ev) {
 
 // ================= Manual coding / state machine stuff
 
+void TestOSComponent::init(unsigned int phase) {
+    //Make sure we can map pages at init time
+    
+    pt_iface->init(phase);
+
+    out->verbose(CALL_INFO, 1, 0, "Init phase %d!\n", phase);
+
+    if(phase == 0) {
+        //Lets map pages 0x4000 and 0x5000 to 0XF4000 and 0xF500
+        pt_iface->initCreateMapping(1);
+        pt_iface->initMapPage(1, 0x4000, 0xF4000, 0);
+        pt_iface->initMapPage(1, 0x5000, 0xF5000, 0);
+    }
+}
+
+void TestOSComponent::setup() {
+    pt_iface->setup();
+}
+
 //noop for now, but we'll need it later when delays are a thing
 bool TestOSComponent::clockTick(SST::Cycle_t x)
 {
@@ -93,7 +112,10 @@ bool TestOSComponent::clockTick(SST::Cycle_t x)
     switch(state) {
         case 0: {
             //Just send out one event
-            pt_iface->createMapping(1);
+
+            //TEMP: don't do this, we already createmapping-ed in init()
+            //not that createMapping() does anything yet
+            //pt_iface->createMapping(1);
 
             state++;
             delay = 5;
@@ -107,8 +129,8 @@ bool TestOSComponent::clockTick(SST::Cycle_t x)
             // 4k pages are at 0x0000, 0x1000, 0x2000, 0x3000
             // lets map pages 4-7 to address 0xF4000 - 0xF7000
             out->verbose(CALL_INFO, 1, 0, "tick %d!\n", tick_counter);
-            pt_iface->mapPage(1, 0x4000, 0xF4000, 0);
-            pt_iface->mapPage(1, 0x5000, 0xF5000, 0);
+            //pt_iface->mapPage(1, 0x4000, 0xF4000, 0); //mapped at init
+            //pt_iface->mapPage(1, 0x5000, 0xF5000, 0); //mapped at init
             pt_iface->mapPage(1, 0x6000, 0xF6000, 0);
             pt_iface->mapPage(1, 0x7000, 0xF7000, 0);
             state++;
