@@ -71,7 +71,7 @@ class PageTable : public SST::Component {
 
         SST_ELI_DOCUMENT_PORTS(
             {"link_from_os", "Requests to map/unmap pages", {"PageTable.MappingEvent"}},
-            {"link_from_tlb", "Requests for translations",  {"MemHierarchy.MemEventBase"}},
+            {"link_from_tlb%d", "Requests for translations",  {"MemHierarchy.MemEventBase"}},
             // {"Port name", "Description", { "list of event types that the port can handle"} }
         )
 
@@ -173,7 +173,7 @@ class PageTable : public SST::Component {
 
         void handleMappingEvent(Event *ev); // handles event from OS: adjusts mappings, sends back response on link
                                             // (delegates body to ...Inner() function)
-        void handleTranslationEvent(Event *ev); // translate memEvents from tlbs
+        void handleTranslationEvent(Event *ev, int tlb_link_index); // translate memEvents from tlbs
 
 
         MappingEvent* handleMappingEventInner(MappingEvent *map_ev); 
@@ -190,7 +190,7 @@ class PageTable : public SST::Component {
         SST::Output* out; // SST Output object, for printing, error messages, etc.
 
         SST::Link* link_from_os;  // link to whoever is creating mappings
-        SST::Link* link_from_tlb; // incoming memEvent translation requests
+        std::vector<SST::Link*> v_link_from_tlb; // incoming memEvent translation requests (one per link)
 
         // ==== Page-table data structure function: eventually will be in own class
         // TODO: split out into own class

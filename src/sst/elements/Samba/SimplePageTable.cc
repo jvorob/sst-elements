@@ -37,11 +37,33 @@ PageTable::PageTable(SST::ComponentId_t id, SST::Params& params): Component(id) 
 
 
 
-    link_from_os =  configureLink("link_from_os",  new Event::Handler<PageTable>(this, &PageTable::handleMappingEvent));
-    link_from_tlb = configureLink("link_from_tlb", new Event::Handler<PageTable>(this, &PageTable::handleTranslationEvent));
-
+    link_from_os =  configureLink("link_from_os", 
+            new Event::Handler<PageTable>(this, &PageTable::handleMappingEvent));
     sst_assert(link_from_os,  CALL_INFO, -1, "Error in SimplePageTable: Failed to configure port 'link_from_os'\n");
-    sst_assert(link_from_tlb, CALL_INFO, -1, "Error in SimplePageTable: Failed to configure port 'link_from_tlb'\n");
+
+
+    // == Load link_from_tlb%d: we can have multiple so loop over them
+    //We can have mutliple TLB links: load them up here:
+    char linkname_sprintf_buff[256];
+    int tlb_i = 0;
+	for(tlb_i = 0; ; tlb_i++) { //Try all of them until we get run out
+        //Grab link of right-numbered name
+		snprintf(linkname_sprintf_buff, 256, "link_from_tlb%d", tlb_i);
+        Link *new_link = configureLink(linkname_sprintf_buff, 
+                new Event::Handler<PageTable, int>(this, &PageTable::handleTranslationEvent, tlb_i));
+
+        if(new_link == NULL) 
+            { break; } // Stop when no more links
+
+        // Store link
+        assert(tlb_i == (int)v_link_from_tlb.size()); //"link0" should be going into vec[0] (should always be true)
+		v_link_from_tlb.push_back(new_link); 
+    }
+    //We should have at least 1?
+    sst_assert(tlb_i > 0, CALL_INFO, -1, "Error in SimplePageTable: Failed to configure port 'link_from_tlb0'\n");
+    out->verbose(_L1_, "Loaded %d ports named 'link_from_tlb*' \n", tlb_i);
+
+
 }
 
 
@@ -121,18 +143,20 @@ PageTable::MappingEvent* PageTable::handleMappingEventInner(PageTable::MappingEv
 
 
 //Incoming MemEvents from TLBs, we need to translate them
-void PageTable::handleTranslationEvent(SST::Event *ev) {
+void PageTable::handleTranslationEvent(SST::Event *ev, int tlb_link_index) {
     auto mem_ev  = dynamic_cast<MemHierarchy::MemEvent*>(ev);
     if (!mem_ev) 
         { out->fatal(CALL_INFO, -1, "Error! Bad Event Type received"); }
 
-    out->verbose(_L3_, "Got translation request (MemEvent): %s\n", mem_ev->getVerboseString().c_str());
+    out->verbose(_L3_, "Got translation req. (MemEvent) on link_from_tlb%d: %s\n", 
+            tlb_link_index, mem_ev->getVerboseString().c_str());
     
     // Translate and send back
     MemEvent *translated_mem_ev = translateMemEvent(mem_ev);
     out->verbose(_L5_, "Sending back translated MemEvent to TLB\n");
     delete mem_ev; //delete original, we send back a copy
-    link_from_tlb->send(translated_mem_ev);
+
+    v_link_from_tlb[tlb_link_index]->send(translated_mem_ev);
 }
 
 
