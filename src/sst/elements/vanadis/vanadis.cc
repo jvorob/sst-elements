@@ -305,6 +305,13 @@ VANADIS_COMPONENT::VANADIS_COMPONENT(SST::ComponentId_t id, SST::Params& params)
                 CALL_INFO, 8, 0, "Utilizing entry point from binary (auto-detected) 0x%llx\n",
                 thread_decoders[0]->getInstructionPointer());
         }
+
+        //TODO: TEMP JVOROBY
+        pageTableInterface = loadUserSubComponent<SST::SambaComponent::PageTableInterface>("pt_interface");
+        if (nullptr == pageTableInterface) {
+            output->verbose(CALL_INFO, 1, 0, "WARNING: Unable to load the pagetableinterface subcomponent. Virtual memory disabled!\n");
+            //output->fatal(CALL_INFO, -1, "Error - unable to load the pagetableinterface subcomponent\n");
+        }
     }
 
     //	VanadisInstruction* test_ins = new VanadisAddInstruction(nextInsID++, 0,
@@ -1762,7 +1769,7 @@ VANADIS_COMPONENT::recoverRetiredRegisters(
 
 void
 VANADIS_COMPONENT::setup()
-{}
+{ if(nullptr != pageTableInterface) pageTableInterface->setup(); } //TODO TEMP JVOROBY
 
 void
 VANADIS_COMPONENT::finish()
@@ -1810,12 +1817,14 @@ VANADIS_COMPONENT::printStatus(SST::Output& output)
 void
 VANADIS_COMPONENT::init(unsigned int phase)
 {
+
     output->verbose(CALL_INFO, 2, 0, "Start: init-phase: %" PRIu32 "...\n", (uint32_t)phase);
     output->verbose(CALL_INFO, 2, 0, "-> Initializing memory interfaces with this phase...\n");
 
     lsq->init(phase);
     //	memDataInterface->init( phase );
     memInstInterface->init(phase);
+    { if(nullptr != pageTableInterface) pageTableInterface->init(phase); } //TODO TEMP JVOROBY
 
     output->verbose(CALL_INFO, 2, 0, "-> Performing init operations for Vanadis...\n");
 
@@ -1836,6 +1845,7 @@ VANADIS_COMPONENT::init(unsigned int phase)
 
                 std::vector<uint8_t> initial_mem_contents;
                 uint64_t             max_content_address = 0;
+                uint64_t             min_content_address = (uint64_t)-1; //TODO TEMP JVOROBY
 
                 // Find the max value we think we are going to need to place entries up
                 // to
@@ -1845,12 +1855,22 @@ VANADIS_COMPONENT::init(unsigned int phase)
                     max_content_address                               = std::max(
                         max_content_address,
                         (uint64_t)next_prog_hdr->getVirtualMemoryStart() + next_prog_hdr->getHeaderImageLength());
+
+                    //headers don't actually load any data??
+                    // if(0 != next_prog_hdr->getHeaderImageLength()) { //TODO TEMP JVOROBY
+                    //     min_content_address = std::min(min_content_address, (uint64_t)next_prog_hdr->getVirtualMemoryStart());
+                    // }
                 }
 
                 for ( size_t i = 0; i < binary_elf_info->countProgramSections(); ++i ) {
                     const VanadisELFProgramSectionEntry* next_sec = binary_elf_info->getProgramSection(i);
                     max_content_address                           = std::max(
                         max_content_address, (uint64_t)next_sec->getVirtualMemoryStart() + next_sec->getImageLength());
+
+                    //some sections have VA 0 or size 0 and aren't actually loaded: ignore them for min
+                    if(0 != next_sec->getVirtualMemoryStart() && 0 != next_sec->getImageLength()) { //TODO TEMP JVOROBY
+                        min_content_address = std::min(min_content_address, (uint64_t)next_sec->getVirtualMemoryStart());
+                    }
                 }
 
                 output->verbose(
@@ -1858,6 +1878,10 @@ VANADIS_COMPONENT::init(unsigned int phase)
                     "-> expecting max address for initial binary load is "
                     "0x%llx, zeroing the memory\n",
                     max_content_address);
+                output->verbose(
+                    CALL_INFO, 2, 0,
+                    "-> expecting min address for initial binary load is 0x%llx\n",
+                    min_content_address); //TODO TEMP JVOROBY
                 initial_mem_contents.resize(max_content_address, (uint8_t)0);
 
                 // Populate the memory with contents from the binary
@@ -1990,21 +2014,26 @@ VANADIS_COMPONENT::init(unsigned int phase)
                 }
 
                 fclose(exec_file);
+                
+                const  int64_t pmem_offset_jvoroby = +0x200000;// +200 pages TODO: TEMP JVOROBY
+                const uint64_t pmem_start = pmem_offset_jvoroby;
 
                 output->verbose(
-                    CALL_INFO, 2, 0, ">> Writing memory contents (%" PRIu64 " bytes at index 0)\n",
-                    (uint64_t)initial_mem_contents.size());
+                    CALL_INFO, 2, 0, ">> Writing memory contents (%" PRIu64 " bytes at index " PRIu64 ")\n",
+                    (uint64_t)initial_mem_contents.size(), pmem_start);
 
                 //				SimpleMem::Request* writeExe = new
                 // SimpleMem::Request(SimpleMem::Request::Write, 					0,
                 // initial_mem_contents.size(), initial_mem_contents);
-                lsq->setInitialMemory(0, initial_mem_contents);
+                //lsq->setInitialMemory(0, initial_mem_contents);
+                lsq->setInitialMemory(pmem_start, initial_mem_contents); //TODO TEMP: JVOROBY
                 //				memInstInterface->sendInitData( writeExe
                 //);
 
                 const uint64_t page_size = 4096;
 
-                uint64_t initial_brk = (uint64_t)initial_mem_contents.size();
+                //uint64_t initial_brk = (uint64_t)initial_mem_contents.size();
+                uint64_t initial_brk = pmem_start + (uint64_t)initial_mem_contents.size(); //TODO: TEMP JVOROBY
                 initial_brk          = initial_brk + (page_size - (initial_brk % page_size));
 
                 output->verbose(
@@ -2013,6 +2042,24 @@ VANADIS_COMPONENT::init(unsigned int phase)
                     "memory ( brk: 0x%llx )\n",
                     initial_brk);
                 thread_decoders[0]->getOSHandler()->registerInitParameter(SYSCALL_INIT_PARAM_INIT_BRK, &initial_brk);
+
+
+
+                //TODO TEMP JVOROBY:
+                // ======================= MAP MEMORY:
+                // for now we just loaded in the file at pmem_start
+                // let's change that to map back to its original VA
+                // 100 pages should be more than enough. 
+                // There's also some stack stuff going on near 0x7f_fff_000 (just under 2gb)
+                // and near 0x60_000_000 (rand values? phdr? it's set in the decoder)
+                // but we're just going to leave that at physical
+                pageTableInterface->initCreateMapping(1); //noop for now, but lets put it in lest we forget
+                for(int64_t page_i = 0; page_i<1000; page_i++) {
+                    //physical addresses were placed at offset, original addreses were place
+                    uint64_t pa = 0x400000 + pmem_offset_jvoroby + (page_i * 0x1000);
+                    uint64_t va = 0x400000 + (page_i * 0x1000); //hardcoding this for now
+                    pageTableInterface->initMapPage(1, va, pa, 0); //map_id, VA, PA, flags
+                }
             }
             else {
                 output->verbose(CALL_INFO, 2, 0, "Not core-0, so will not perform any loading of binary info.\n");

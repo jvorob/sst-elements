@@ -28,6 +28,7 @@
 #include "velf/velfinfo.h"
 #include "vfpflags.h"
 #include "vfuncunit.h"
+#include "../Samba/PageTableInterface.h"
 
 #include <array>
 #include <limits>
@@ -159,7 +160,10 @@ public:
     SST_ELI_DOCUMENT_SUBCOMPONENT_SLOTS(
         { "lsq", "Load-Store Queue for Memory Access", "SST::Vanadis::VanadisLoadStoreQueue" },
         { "mem_interface_inst", "Interface to memory system for instructions", "SST::Interfaces::StandardMem" },
-        { "decoder%(hardware_threads)d", "Instruction decoder for a hardware thread", "SST::Vanadis::VanadisDecoder" })
+        { "decoder%(hardware_threads)d", "Instruction decoder for a hardware thread", "SST::Vanadis::VanadisDecoder" },
+
+        //TODO: TEMP JVOROBY
+        { "pt_interface", "Interface to pagetables for virtual memory", "SST::SambaComponent::PageTableInterface" })
 
 #ifdef VANADIS_BUILD_DEBUG
     VanadisDebugComponent(SST::ComponentId_t id, SST::Params& params);
@@ -260,6 +264,7 @@ private:
 
     VanadisLoadStoreQueue* lsq;
     StandardMem*           memInstInterface;
+    SST::SambaComponent::PageTableInterface *pageTableInterface; //TODO: TEMP JVOROBY
 
     bool* halted_masks;
     bool  print_int_reg;
