@@ -52,10 +52,14 @@ TestOSComponent::TestOSComponent(SST::ComponentId_t id, SST::Params& params): Co
     pt_iface->initialize(NULL, new Event::Handler<TestOSComponent>(this, &TestOSComponent::handlePageTableEvent));
 
 
-    //Tell the simulation not to end until we're ready
+    //Check noop param, disables creating any mappings
+    noop = (bool) params.find<int>("noop", 0);
+
+    if(noop) { return; }
+
+    //ELSE: Tell the simulation not to end until we're ready
     registerAsPrimaryComponent();
     primaryComponentDoNotEndSim();
-
 
     // Setup clock for running state machine
 	std::string cpu_clock = params.find<std::string>("clock", "1GHz");
@@ -83,6 +87,9 @@ void TestOSComponent::init(unsigned int phase) {
     
     pt_iface->init(phase);
 
+    //If noop, create no mapping
+    if(noop) { return; }
+
     out->verbose(CALL_INFO, 1, 0, "Init phase %d!\n", phase);
 
     if(phase == 0) {
@@ -95,11 +102,17 @@ void TestOSComponent::init(unsigned int phase) {
 
 void TestOSComponent::setup() {
     pt_iface->setup();
+
+    //If noop, create no mappings
+    if(noop) { return; }
 }
 
 //noop for now, but we'll need it later when delays are a thing
 bool TestOSComponent::clockTick(SST::Cycle_t x)
 {
+    //If noop, create no mappings
+    if(noop) { return true; } //return true to disable this clock
+
     //we want to run a quick-and-dirty little state machine here
     //lets make some variables:
     static int tick_counter = 0;

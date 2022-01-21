@@ -148,7 +148,7 @@ makeLink("link_l1cache_membus",
 
 # ==== Link OS and TLB to pagetable
 makeLink("link_os_pagetable_simpletlb",
-    (SC_pt_interface, "pagetable_link", "50ps"), (C_pagetable, "link_from_os", "50ps"))
+    (SC_pt_interface, "port", "50ps"), (C_pagetable, "link_from_os", "50ps"))
 
 makeLink("link_tlb_pagetable",
     (C_tlb, "pagetable_link", "50ps"), (C_pagetable, "link_from_tlb0", "50ps"))

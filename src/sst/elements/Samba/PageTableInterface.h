@@ -52,7 +52,7 @@ class PageTableInterface : public SST::SubComponent {
 
         // {"Port name", "Description", { "list of event types that the port can handle"} }
         SST_ELI_DOCUMENT_PORTS(
-            {"pagetable_link", "link to SimplePageTable component that this controls", {}},
+            {"port", "link to SimplePageTable component that this controls", {}},
             //{"cpu_to_mmu%(corecount)d", "Each Samba has link to its core", {}},
             //{"mmu_to_cache%(corecount)d", "Each Samba to its corresponding cache", {}},
         )
@@ -64,13 +64,13 @@ class PageTableInterface : public SST::SubComponent {
             num_pending_requests = 0;
             parent_handler = NULL;
 
-            int verbosity = params.find<int>("verbose", 5);
+            int verbosity = params.find<int>("verbose", 0);
             out = new SST::Output("PageTableInterface[@f:@l:@p>] ", verbosity, 0, SST::Output::STDOUT);
             out->verbose(_L1_, "Creating PageTableInterface\n");
 
 
 
-            out_link = configureLink("pagetable_link",
+            out_link = configureLink("port",
                 new Event::Handler<PageTableInterface>(this, &PageTableInterface::handleEvent));
 
             // Failure usually means the user didn't connect the port in the input file

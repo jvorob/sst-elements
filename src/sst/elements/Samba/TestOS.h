@@ -34,6 +34,7 @@ class TestOSComponent : public SST::Component {
 
         SST_ELI_DOCUMENT_PARAMS(
             {"verbose", "(uint) Output verbosity for warnings/errors. 0[fatal error only], 1[warnings], 2[full state dump on fatal error]","1"},
+            {"noop", "if this is set to 1, testOS won't send any messages, just instantiate pagetable interface", "0"}
         )
 
         SST_ELI_DOCUMENT_PORTS(
@@ -65,6 +66,10 @@ class TestOSComponent : public SST::Component {
         PageTableInterface *pt_iface;
 
         SST::Output* out;
+
+
+        bool noop; //If set, disable all the mapping-driving stuff
+                   //Useful to just instantiant a page_table_interface and do nothing
 
         //  // Event handler, called when an event is received on high or low link
         //  void handleEvent(SST::Event *ev, bool is_low);

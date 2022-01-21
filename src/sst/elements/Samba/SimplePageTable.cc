@@ -42,11 +42,11 @@ PageTable::PageTable(SST::ComponentId_t id, SST::Params& params): Component(id) 
     sst_assert(link_from_os,  CALL_INFO, -1, "Error in SimplePageTable: Failed to configure port 'link_from_os'\n");
 
 
-    // == Load link_from_tlb%d: we can have multiple so loop over them
-    //We can have mutliple TLB links: load them up here:
+    // == Load ports "link_from_tlb%d": we can have multiple so loop over them
+    
     char linkname_sprintf_buff[256];
     int tlb_i = 0;
-	for(tlb_i = 0; ; tlb_i++) { //Try all of them until we get run out
+	for(tlb_i = 0; ; tlb_i++) {  // loop until configureLink() fails
         //Grab link of right-numbered name
 		snprintf(linkname_sprintf_buff, 256, "link_from_tlb%d", tlb_i);
         Link *new_link = configureLink(linkname_sprintf_buff, 
@@ -176,9 +176,13 @@ MemEvent* PageTable::translateMemEvent(MemEvent *mEv) {
 
     Addr vAddr    = mEv->getVirtualAddress();
     Addr mainAddr = mEv->getAddr();
-    Addr baseAddr = mEv->getBaseAddr();
+    Addr baseAddr = mEv->getBaseAddr(); //base of the cache line I think?
 
-    if(vAddr != mainAddr) {
+    if(vAddr == 0) {
+        //Some components just don't set it?
+        //we should set it for legivility
+        mEv->setVirtualAddress(mainAddr);
+    } else if(vAddr != mainAddr) {
         out->verbose(_L2_, "Unexpected: MemEvent's vAddr and Addr differ: %s\n", mEv->getVerboseString().c_str() );
     }
 

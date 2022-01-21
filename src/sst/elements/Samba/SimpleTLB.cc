@@ -135,8 +135,9 @@ SimpleTLB::~SimpleTLB() {
 void SimpleTLB::init(unsigned int phase) {
 	// Pass-through init events between CPU and Memory/Caches
     // (Before main simulation begins)
+    // (NO TRANSLATIONS FOR INIT-TIME WRITES)
 
-    out->verbose(_L2_, "SimpleTLB::init() called\n");
+    out->verbose(_L2_, "SimpleTLB::init(%d) called\n", phase);
 
     SST::Event * ev;
     while ((ev = link_high->recvInitData())) { //incoming from CPU, forward down
