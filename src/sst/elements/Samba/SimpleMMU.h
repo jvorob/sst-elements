@@ -19,10 +19,12 @@ using SST::MemHierarchy::Addr;
 namespace SST {
 namespace SambaComponent {
 
-class PageTable : public SST::Component {
+class SimpleMMU : public SST::Component {
 
-    /*     PageTable Documentation:
+    /*     MMU Documentation:
      *
+     * Answers translation requests from TLB(s) according to one or more
+     * internal memory mappings (page tables)
      *
      * Stores one or more memory mappigns (i.e. page tables)
      * Can edit mappings with MappingEvents to port 'link_from_os':
@@ -56,11 +58,11 @@ class PageTable : public SST::Component {
 
         // REGISTER THIS COMPONENT INTO THE ELEMENT LIBRARY
         SST_ELI_REGISTER_COMPONENT(
-            PageTable,                          // Component class
+            SimpleMMU,                          // Component class
             "Samba",                            // Component library (for Python/library lookup)
-            "SimplePageTable",                  // Component name (for Python/library lookup)
+            "SimpleMMU",                        // Component name (for Python/library lookup)
             SST_ELI_ELEMENT_VERSION(1,0,0),     // Version of the component (not related to SST version)
-            "PageTable to go with SimpleTLB",   // Description
+            "SimpleMMU to go with SimpleTLB",   // Description
             COMPONENT_CATEGORY_UNCATEGORIZED    // Category
         )
 
@@ -70,7 +72,7 @@ class PageTable : public SST::Component {
         )
 
         SST_ELI_DOCUMENT_PORTS(
-            {"link_from_os", "Requests to map/unmap pages", {"PageTable.MappingEvent"}},
+            {"link_from_os", "Requests to map/unmap pages", {"SimpleMMU.MappingEvent"}},
             {"link_from_tlb%d", "Requests for translations",  {"MemHierarchy.MemEventBase"}},
             // {"Port name", "Description", { "list of event types that the port can handle"} }
         )
@@ -144,7 +146,7 @@ class PageTable : public SST::Component {
             }
 
             // Register this event as serializable
-            ImplementSerializable(PageTable::MappingEvent);
+            ImplementSerializable(SimpleMMU::MappingEvent);
 
 
 
@@ -168,7 +170,7 @@ class PageTable : public SST::Component {
 
     public:
         // ???
-        PageTable(SST::ComponentId_t id, SST::Params& params);
+        SimpleMMU(SST::ComponentId_t id, SST::Params& params);
 
 
         void handleMappingEvent(Event *ev); // handles event from OS: adjusts mappings, sends back response on link

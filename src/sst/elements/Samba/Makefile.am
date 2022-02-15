@@ -21,8 +21,8 @@ libSamba_la_SOURCES = \
 	PageFaultHandler.h \
 	SimpleTLB.cc \
 	SimpleTLB.h \
-	SimplePageTable.h \
-	SimplePageTable.cc \
+	SimpleMMU.h \
+	SimpleMMU.cc \
 	PageTableInterface.h \
 	TestOS.cc \
 	TestOS.h

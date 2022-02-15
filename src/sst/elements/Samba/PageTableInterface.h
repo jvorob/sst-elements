@@ -14,7 +14,7 @@
 //#include <sst/elements/memHierarchy/util.h>
 
 
-#include "SimplePageTable.h"
+#include "SimpleMMU.h"
 
 
 
@@ -52,7 +52,7 @@ class PageTableInterface : public SST::SubComponent {
 
         // {"Port name", "Description", { "list of event types that the port can handle"} }
         SST_ELI_DOCUMENT_PORTS(
-            {"port", "link to SimplePageTable component that this controls", {}},
+            {"port", "link to SimpleMMU component that this controls", {}},
             //{"cpu_to_mmu%(corecount)d", "Each Samba has link to its core", {}},
             //{"mmu_to_cache%(corecount)d", "Each Samba to its corresponding cache", {}},
         )
@@ -123,9 +123,9 @@ class PageTableInterface : public SST::SubComponent {
             return num_pending_requests;
         }
 
-        // Event handler for PageTable event responses
+        // Event handler for MMU event responses
         void handleEvent(SST::Event *ev) {
-            auto map_event = dynamic_cast<PageTable::MappingEvent*>(ev);
+            auto map_event = dynamic_cast<SimpleMMU::MappingEvent*>(ev);
 
             if (!map_event) {
                 out->fatal(CALL_INFO, -1, "Error! Bad Event Type received by %s, expecting MappingEvent\n", getName().c_str());
@@ -179,8 +179,8 @@ class PageTableInterface : public SST::SubComponent {
             out->verbose(_L3_, "Sending CREATE_MAPPING (does nothing for now)\n");
             if (!is_init) { num_pending_requests++; }
 
-            auto type = PageTable::MappingEvent::eventType::CREATE_MAPPING;
-            auto ev = new PageTable::MappingEvent(type, map_id, -1, -1);
+            auto type = SimpleMMU::MappingEvent::eventType::CREATE_MAPPING;
+            auto ev = new SimpleMMU::MappingEvent(type, map_id, -1, -1);
             
             if (!is_init)  //Normal send
                 { out_link->send(ev); } 
@@ -193,8 +193,8 @@ class PageTableInterface : public SST::SubComponent {
             out->verbose(_L3_, "Sending MAP_PAGE\n");
             if (!is_init) { num_pending_requests++; }
 
-            auto type = PageTable::MappingEvent::eventType::MAP_PAGE;
-            auto ev = new PageTable::MappingEvent(type, map_id, v_addr, p_addr);
+            auto type = SimpleMMU::MappingEvent::eventType::MAP_PAGE;
+            auto ev = new SimpleMMU::MappingEvent(type, map_id, v_addr, p_addr);
 
             if (!is_init)  //Normal send
                 { out_link->send(ev); } 
@@ -205,8 +205,8 @@ class PageTableInterface : public SST::SubComponent {
             out->verbose(_L3_, "Sending UNMAP_PAGE\n");
             if (!is_init) { num_pending_requests++; }
 
-            auto type = PageTable::MappingEvent::eventType::UNMAP_PAGE;
-            auto ev = new PageTable::MappingEvent(type, map_id, v_addr, -1);
+            auto type = SimpleMMU::MappingEvent::eventType::UNMAP_PAGE;
+            auto ev = new SimpleMMU::MappingEvent(type, map_id, v_addr, -1);
 
             if (!is_init)  //Normal send
                 { out_link->send(ev); } 

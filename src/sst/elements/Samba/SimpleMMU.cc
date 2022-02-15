@@ -1,5 +1,5 @@
 #include <sst_config.h>
-#include "SimplePageTable.h"
+#include "SimpleMMU.h"
 
 using namespace SST;
 using namespace SambaComponent;
@@ -29,17 +29,17 @@ using SST::MemHierarchy::Addr;
 // #define _L10_  CALL_INFO,10,0 //everything
 
 
-PageTable::PageTable(SST::ComponentId_t id, SST::Params& params): Component(id) {
+SimpleMMU::SimpleMMU(SST::ComponentId_t id, SST::Params& params): Component(id) {
 
     int verbosity = params.find<int>("verbose", 1);
-    out = new SST::Output("PageTable[@f:@l:@p>] ", verbosity, 0, SST::Output::STDOUT);
-    out->verbose(_L1_, "Creating PageTable\n");
+    out = new SST::Output("SimpleMMU[@f:@l:@p>] ", verbosity, 0, SST::Output::STDOUT);
+    out->verbose(_L1_, "Creating SimpleMMU\n");
 
 
 
     link_from_os =  configureLink("link_from_os", 
-            new Event::Handler<PageTable>(this, &PageTable::handleMappingEvent));
-    sst_assert(link_from_os,  CALL_INFO, -1, "Error in SimplePageTable: Failed to configure port 'link_from_os'\n");
+            new Event::Handler<SimpleMMU>(this, &SimpleMMU::handleMappingEvent));
+    sst_assert(link_from_os,  CALL_INFO, -1, "Error in SimpleMMU: Failed to configure port 'link_from_os'\n");
 
 
     // == Load ports "link_from_tlb%d": we can have multiple so loop over them
@@ -50,7 +50,7 @@ PageTable::PageTable(SST::ComponentId_t id, SST::Params& params): Component(id) 
         //Grab link of right-numbered name
 		snprintf(linkname_sprintf_buff, 256, "link_from_tlb%d", tlb_i);
         Link *new_link = configureLink(linkname_sprintf_buff, 
-                new Event::Handler<PageTable, int>(this, &PageTable::handleTranslationEvent, tlb_i));
+                new Event::Handler<SimpleMMU, int>(this, &SimpleMMU::handleTranslationEvent, tlb_i));
 
         if(new_link == NULL) 
             { break; } // Stop when no more links
@@ -60,7 +60,7 @@ PageTable::PageTable(SST::ComponentId_t id, SST::Params& params): Component(id) 
 		v_link_from_tlb.push_back(new_link); 
     }
     //We should have at least 1?
-    sst_assert(tlb_i > 0, CALL_INFO, -1, "Error in SimplePageTable: Failed to configure port 'link_from_tlb0'\n");
+    sst_assert(tlb_i > 0, CALL_INFO, -1, "Error in SimpleMMU: Failed to configure port 'link_from_tlb0'\n");
     out->verbose(_L1_, "Loaded %d ports named 'link_from_tlb*' \n", tlb_i);
 
 
@@ -74,7 +74,7 @@ PageTable::PageTable(SST::ComponentId_t id, SST::Params& params): Component(id) 
 //
 // ========================================================================
 
-void PageTable::init(unsigned int phase) {
+void SimpleMMU::init(unsigned int phase) {
 	// We need to handle mapping events during the init phase
     // (Before main simulation begins)
 
@@ -82,13 +82,13 @@ void PageTable::init(unsigned int phase) {
 
     SST::Event * ev;
     while ((ev = link_from_os->recvInitData())) { //incoming from CPU, forward down
-        auto map_ev  = dynamic_cast<PageTable::MappingEvent*>(ev);
+        auto map_ev  = dynamic_cast<SimpleMMU::MappingEvent*>(ev);
         if (!map_ev) 
             { out->fatal(CALL_INFO, -1, "Error! Bad Event Type received at init time\n"); }
         out->verbose(_L3_, "Got mappingEvent at init time: %s\n", map_ev->getString().c_str());
         
         //delegate execution to inner function
-        PageTable::MappingEvent* resp_ev = handleMappingEventInner(map_ev);
+        SimpleMMU::MappingEvent* resp_ev = handleMappingEventInner(map_ev);
 
         link_from_os->sendInitData(resp_ev); //send back response
     }
@@ -98,15 +98,15 @@ void PageTable::init(unsigned int phase) {
 
 
 // Page mappings requests from OS
-void PageTable::handleMappingEvent(SST::Event *ev) {
-    auto map_ev  = dynamic_cast<PageTable::MappingEvent*>(ev);
+void SimpleMMU::handleMappingEvent(SST::Event *ev) {
+    auto map_ev  = dynamic_cast<SimpleMMU::MappingEvent*>(ev);
     if (!map_ev) 
         { out->fatal(CALL_INFO, -1, "Error! Bad Event Type received\n"); }
 
     out->verbose(_L3_, "Got mappingEvent: %s\n", map_ev->getString().c_str());
 
     //delegate body to inner function
-    PageTable::MappingEvent* resp_ev = handleMappingEventInner(map_ev);
+    SimpleMMU::MappingEvent* resp_ev = handleMappingEventInner(map_ev);
 
     out->verbose(_L3_, "Sending back response\n");
     link_from_os->send(resp_ev);
@@ -117,17 +117,17 @@ void PageTable::handleMappingEvent(SST::Event *ev) {
 // Handle page-mappings requests from OS
 // inner logic: doesn't send or receive anything:
 // returns a response mapping-event
-PageTable::MappingEvent* PageTable::handleMappingEventInner(PageTable::MappingEvent* map_ev) {
+SimpleMMU::MappingEvent* SimpleMMU::handleMappingEventInner(SimpleMMU::MappingEvent* map_ev) {
     //map_ev should be non_null
 
     switch(map_ev->type) {
-        case PageTable::MappingEvent::eventType::MAP_PAGE:
+        case SimpleMMU::MappingEvent::eventType::MAP_PAGE:
             out->verbose(_L3_, "Mapping page at VA=0x%lx, PA=0x%lx\n", map_ev->v_addr, map_ev->p_addr);
             PT_mapPage(map_ev->v_addr, map_ev->p_addr, 0); //no flags for now
             //TODO: we'll have multiple maps keyed by map_ev->map_id
             break;
 
-        case PageTable::MappingEvent::eventType::UNMAP_PAGE:
+        case SimpleMMU::MappingEvent::eventType::UNMAP_PAGE:
             out->verbose(_L3_, "Unmapping page at VA=0x%lx\n", map_ev->v_addr);
             PT_unmapPage(map_ev->v_addr, 0); //no flags for now
             //TODO: we'll have multiple maps keyed by map_ev->map_id
@@ -143,7 +143,7 @@ PageTable::MappingEvent* PageTable::handleMappingEventInner(PageTable::MappingEv
 
 
 //Incoming MemEvents from TLBs, we need to translate them
-void PageTable::handleTranslationEvent(SST::Event *ev, int tlb_link_index) {
+void SimpleMMU::handleTranslationEvent(SST::Event *ev, int tlb_link_index) {
     auto mem_ev  = dynamic_cast<MemHierarchy::MemEvent*>(ev);
     if (!mem_ev) 
         { out->fatal(CALL_INFO, -1, "Error! Bad Event Type received"); }
@@ -170,7 +170,7 @@ void PageTable::handleTranslationEvent(SST::Event *ev, int tlb_link_index) {
 
 
 
-MemEvent* PageTable::translateMemEvent(MemEvent *mEv) {
+MemEvent* SimpleMMU::translateMemEvent(MemEvent *mEv) {
     //Returns translated copy of mEv
     //CALLER MUST DELETE ORIGINAL mEV
 
@@ -216,7 +216,7 @@ MemEvent* PageTable::translateMemEvent(MemEvent *mEv) {
 }
 
 
-Addr PageTable::translatePage(Addr virtPageAddr) {
+Addr SimpleMMU::translatePage(Addr virtPageAddr) {
     // Returns physical page addr
     // On page fault, crash out (TODO: change this?)
     
@@ -288,7 +288,7 @@ Addr PageTable::translatePage(Addr virtPageAddr) {
 //
 //std::map<MemHierarchy::Addr, PageTableEntry> PT_map;
 
-void PageTable::PT_mapPage(Addr v_addr, Addr p_addr, uint64_t flags) {
+void SimpleMMU::PT_mapPage(Addr v_addr, Addr p_addr, uint64_t flags) {
     sst_assert(IS_4K_ALIGNED(v_addr) && IS_4K_ALIGNED(p_addr), CALL_INFO, -1, "ERROR: addresses must be 4K aligned\n");
 
     //error if already exists (QUESTION: should this more permissive?)   
@@ -298,7 +298,7 @@ void PageTable::PT_mapPage(Addr v_addr, Addr p_addr, uint64_t flags) {
     PT_map[v_addr] = PageTableEntry(v_addr, p_addr, flags | PT_FL_VALID);
 }
 
-void PageTable::PT_unmapPage(Addr v_addr, uint64_t flags) {
+void SimpleMMU::PT_unmapPage(Addr v_addr, uint64_t flags) {
     sst_assert(IS_4K_ALIGNED(v_addr), CALL_INFO, -1, "ERROR: addresses must be 4K aligned\n");
 
     //error if it does not exist (QUESTION: should this more permissive?)   
@@ -310,7 +310,7 @@ void PageTable::PT_unmapPage(Addr v_addr, uint64_t flags) {
 
 //TODO: add a PT exists call? because we can have either the PTE doesn't exist in PT_map or it exists but is invalid
 
-PageTable::PageTableEntry PageTable::PT_lookup(Addr v_addr) {
+SimpleMMU::PageTableEntry SimpleMMU::PT_lookup(Addr v_addr) {
     //returns (by value) the pagetable entry
     //if no mapped page, returns a pageTableEntry with isValid() false and addresses set to -1)
     

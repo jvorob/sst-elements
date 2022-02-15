@@ -39,8 +39,8 @@ SC_pt_interface.addParams({
     "verbose": 5,
 })
 
-C_pagetable = sst.Component("pagetable", "Samba.SimplePageTable")
-C_pagetable.addParams({
+C_mmu = sst.Component("mmu", "Samba.SimpleMMU")
+C_mmu.addParams({
     "verbose": 10,
 })
 
@@ -147,9 +147,9 @@ makeLink("link_l1cache_membus",
 
 
 # ==== Link OS and TLB to pagetable
-makeLink("link_os_pagetable_simpletlb",
-    (SC_pt_interface, "port", "50ps"), (C_pagetable, "link_from_os", "50ps"))
+makeLink("link_os_mmu",
+    (SC_pt_interface, "port", "50ps"), (C_mmu, "link_from_os", "50ps"))
 
-makeLink("link_tlb_pagetable",
-    (C_tlb, "pagetable_link", "50ps"), (C_pagetable, "link_from_tlb0", "50ps"))
+makeLink("link_tlb_mmu",
+    (C_tlb, "mmu_link", "50ps"), (C_mmu, "link_from_tlb0", "50ps"))
 

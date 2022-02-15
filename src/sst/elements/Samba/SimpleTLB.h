@@ -28,7 +28,7 @@
 #include <sst/elements/memHierarchy/memEvent.h>
 #include <sst/elements/memHierarchy/util.h>
 
-#include "SimplePageTable.h"
+#include "SimpleMMU.h"
 
 using namespace std;
 
@@ -89,7 +89,7 @@ class SimpleTLB : public SST::Component {
         SST_ELI_DOCUMENT_PORTS(
             {"high_network", "Link to cpu", {"MemHierarchy.MemEventBase"}},
             {"low_network", "Link toward caches", {"MemHierarchy.MemEventBase"}},
-            {"pagetable_link", "Link to pagetable for translations", {"MemHierarchy.MemEventBase"}},
+            {"mmu_link", "Link to mmu for translations", {"MemHierarchy.MemEventBase"}},
 
 
             //{"cpu_to_mmu%(corecount)d", "Each Samba has link to its core", {}},
@@ -109,7 +109,7 @@ class SimpleTLB : public SST::Component {
 
 
         // Event handler, called when an event is received on high or low link
-        typedef enum { FROM_HIGH=0, FROM_LOW, FROM_PT} enum_event_src ; //for tagging handlers
+        typedef enum { FROM_HIGH=0, FROM_LOW, FROM_MMU} enum_event_src ; //for tagging handlers
         void handleEvent(SST::Event *ev, enum_event_src from);
 
         // Clock handler, called on each clock cycle
@@ -133,9 +133,9 @@ class SimpleTLB : public SST::Component {
         SST::Output* out;
 
         // Links
-        SST::Link* link_high;  // to cpu
-        SST::Link* link_low;  // to cpu
-        SST::Link* link_pagetable;  // to pagetable
+        SST::Link* link_high; // toward cpu
+        SST::Link* link_low;  // toward memory
+        SST::Link* link_mmu;  // to mmu
 
 
         //Params for fixed-region translation (For quick-and-dirty virtual memory)

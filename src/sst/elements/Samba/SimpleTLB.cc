@@ -81,7 +81,7 @@ SimpleTLB::SimpleTLB(SST::ComponentId_t id, SST::Params& params): Component(id) 
 
 
 
-    // if len == 0, mapping is disabled. Else: enable and sanity-check
+    // if len == 0, mapping is disabled. Else: enable fixed mapping and align-check/sanity-check
 	if (fixed_mapping_len != 0) {
         if(PAGE_OFFSET_4K(fixed_mapping_va_start) != 0)
             { out->fatal(CALL_INFO, -1, "Error! 'fixed_mapping_va_start' not 4k aligned in %s. Got value '0x%lx'\n",
@@ -110,13 +110,13 @@ SimpleTLB::SimpleTLB(SST::ComponentId_t id, SST::Params& params): Component(id) 
             new Event::Handler<SimpleTLB, enum_event_src>(this, &SimpleTLB::handleEvent, FROM_HIGH));
     link_low = configureLink("low_network",
             new Event::Handler<SimpleTLB, enum_event_src>(this, &SimpleTLB::handleEvent, FROM_LOW));
-    link_pagetable = configureLink("pagetable_link",
-            new Event::Handler<SimpleTLB, enum_event_src>(this, &SimpleTLB::handleEvent, FROM_PT));
+    link_mmu = configureLink("mmu_link",
+            new Event::Handler<SimpleTLB, enum_event_src>(this, &SimpleTLB::handleEvent, FROM_MMU));
 
     // Failure usually means the user didn't connect the port in the input file
     sst_assert(link_low,       CALL_INFO, -1, "Error in %s: Failed to configure port 'link_low'\n", getName().c_str());
     sst_assert(link_high,      CALL_INFO, -1, "Error in %s: Failed to configure port 'link_high'\n", getName().c_str());
-    sst_assert(link_pagetable, CALL_INFO, -1, "Error in %s: Failed to configure port 'link_pagetable'\n", getName().c_str());
+    sst_assert(link_mmu, CALL_INFO, -1, "Error in %s: Failed to configure port 'link_mmu'\n", getName().c_str());
 
 
     // Setup clock for delaying things
@@ -161,8 +161,8 @@ void SimpleTLB::init(unsigned int phase) {
 
 void SimpleTLB::handleEvent(SST::Event *ev, enum_event_src from) {
     // Shared handler for all links
-    // Current strategy is:  mem events from above are sent to page table for translation,
-    //                       translated events from page table are sent down to mem (link_low)
+    // Current strategy is:  mem events from above are sent to mmu for translation,
+    //                       translated events from mmu are sent down to mem (link_low)
     //                       filled memevents from below are return up to cpu (link_high)
     //
 
@@ -194,8 +194,8 @@ void SimpleTLB::handleEvent(SST::Event *ev, enum_event_src from) {
 
         } else { //Able to cast to a MemEvent
             //TODO: TEMP TESTING STUFF
-            out->verbose(_L5_, "TEMP:sending memevent to pagetable\n");
-            link_pagetable->send(ev);
+            out->verbose(_L5_, "TEMP:sending memevent to mmu\n");
+            link_mmu->send(ev);
 
 
             // MemEvent *translated_m_event = translateMemEvent(m_event);
@@ -208,8 +208,8 @@ void SimpleTLB::handleEvent(SST::Event *ev, enum_event_src from) {
 
         }
 
-    } else if (from == FROM_PT) { // translated response from pagetable
-        out->verbose(_L5_, "Got translated memevent back from pagetable: %s, sending down to mem\n", 
+    } else if (from == FROM_MMU) { // translated response from mmu
+        out->verbose(_L5_, "Got translated memevent back from mmu: %s, sending down to mem\n", 
                             m_event_base->getVerboseString().c_str());
         link_low->send(ev);
 
