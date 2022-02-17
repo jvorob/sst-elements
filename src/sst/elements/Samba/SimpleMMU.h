@@ -139,10 +139,10 @@ class SimpleMMU : public SST::Component {
 
 
         //Transates mEv, returns new m_ev
-        SST::MemHierarchy::MemEvent* translateMemEvent(SST::MemHierarchy::MemEvent *mEv);
+        SST::MemHierarchy::MemEvent* translateMemEvent(uint64_t map_id, SST::MemHierarchy::MemEvent *mEv);
 
         //Pure function to translate just a virt addr to physaddr
-        SST::MemHierarchy::Addr      translatePage(SST::MemHierarchy::Addr virtPageAddr);
+        SST::MemHierarchy::Addr      translatePage(uint64_t map_id, SST::MemHierarchy::Addr virtPageAddr);
 
 
         //gets the corresponding map or returns a verbose error

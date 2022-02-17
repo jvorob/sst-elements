@@ -185,7 +185,8 @@ void SimpleMMU::handleTranslationEvent(SST::Event *ev, int tlb_link_index) {
             tlb_link_index, mem_ev->getVerboseString().c_str());
     
     // Translate and send back
-    MemEvent *translated_mem_ev = translateMemEvent(mem_ev);
+    uint64_t map_id = tlb_link_index; //TODO TEMP: assume link 0 goes with mapping 0 for now
+    MemEvent *translated_mem_ev = translateMemEvent(map_id, mem_ev);
     out->verbose(_L5_, "Sending back translated MemEvent to TLB\n");
     delete mem_ev; //delete original, we send back a copy
 
@@ -203,7 +204,7 @@ void SimpleMMU::handleTranslationEvent(SST::Event *ev, int tlb_link_index) {
 
 
 
-MemEvent* SimpleMMU::translateMemEvent(MemEvent *mEv) {
+MemEvent* SimpleMMU::translateMemEvent(uint64_t map_id, MemEvent *mEv) {
     //Returns translated copy of mEv
     //CALLER MUST DELETE ORIGINAL mEV
 
@@ -213,28 +214,26 @@ MemEvent* SimpleMMU::translateMemEvent(MemEvent *mEv) {
 
     if(vAddr == 0) {
         //Some components just don't set it?
-        //we should set it for legivility
+        //we should set it for legibility
         mEv->setVirtualAddress(mainAddr);
     } else if(vAddr != mainAddr) {
         out->verbose(_L2_, "Unexpected: MemEvent's vAddr and Addr differ: %s\n", mEv->getVerboseString().c_str() );
     }
 
-    Addr vPage =      mainAddr & ~BOTTOM_N_BITS(12);
-    Addr pageOffset = mainAddr &  BOTTOM_N_BITS(12);
-
-    // we'll need this to recreate translated base addr
-    int64_t cacheline_offset = mainAddr - baseAddr;
+    Addr vPage =          mainAddr & ~BOTTOM_N_BITS(12);
+    Addr pageOffset =     mainAddr &  BOTTOM_N_BITS(12);
+    Addr baseAddrOffset = baseAddr &  BOTTOM_N_BITS(12);
 
 
     //======== Do the translation
-    Addr pPage = translatePage(vPage);
+    Addr pPage = translatePage(map_id, vPage);
 
 
     //======== Cleanup and return
 
     //Stitch together result
     Addr pAddr = pPage | pageOffset;
-    Addr pBaseAddr = pAddr - cacheline_offset;
+    Addr pBaseAddr = pPage | baseAddrOffset; //should always be in same page
 
 
     MemEvent *new_mEv = mEv->clone();
@@ -249,11 +248,11 @@ MemEvent* SimpleMMU::translateMemEvent(MemEvent *mEv) {
 }
 
 
-Addr SimpleMMU::translatePage(Addr virtPageAddr) {
+Addr SimpleMMU::translatePage(uint64_t map_id, Addr virtPageAddr) {
     // Returns physical page addr
-    // On page fault, crash out (TODO: change this?)
+    // On page fault, crash out (TODO: add page fault support)
     
-    PageTable *pt = getMap(1); //TODO TEMP: (need to specfiy the actual map_id somehow)
+    PageTable *pt = getMap(map_id);
     PageTableEntry ent = pt->lookup(virtPageAddr);
 
     
@@ -261,8 +260,7 @@ Addr SimpleMMU::translatePage(Addr virtPageAddr) {
         //// unmapped pages are a page fault
         //sst_assert(ent.isValid(), CALL_INFO, -1, "ERROR: Pagetable page fault (no mapping at VA=0x%lx)\n", ent.v_addr);
 
-
-        //TODO TEMP: for now we let the default mapping play out if no entry found
+        //TODO TEMP: for now we let the default mapping play out if no entry found instead of faulting
         return virtPageAddr;
 
     } else {
@@ -270,8 +268,7 @@ Addr SimpleMMU::translatePage(Addr virtPageAddr) {
     }
     
     
-
-    //     //==== TODO TEMP DEBUGGING:
+    //     //==== TODO TEMP: hardcoded fixed-offset translation
     //     // to just check if the plumbing works, lets manually hardcode the fixed-region mapping from simpleTLB
     //     //
     //     const Addr fixed_mapping_va_start = 0x0;

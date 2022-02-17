@@ -39,6 +39,8 @@ using SST::MemHierarchy::Addr;
 // #define _L10_  CALL_INFO,10,0 //everything
 
 
+#define DEFAULT_MAPPING_ID 0
+
 TestOSComponent::TestOSComponent(SST::ComponentId_t id, SST::Params& params): Component(id) {
     int verbosity = params.find<int>("verbose", 1);
     out = new SST::Output("TestOS[@f:@l:@p] ", verbosity, 0, SST::Output::STDOUT);
@@ -94,9 +96,9 @@ void TestOSComponent::init(unsigned int phase) {
 
     if(phase == 0) {
         //Lets map pages 0x4000 and 0x5000 to 0XF4000 and 0xF500
-        pt_iface->initCreateMapping(1);
-        pt_iface->initMapPage(1, 0x4000, 0xF4000, 0);
-        pt_iface->initMapPage(1, 0x5000, 0xF5000, 0);
+        pt_iface->initCreateMapping(DEFAULT_MAPPING_ID);
+        pt_iface->initMapPage(DEFAULT_MAPPING_ID, 0x4000, 0xF4000, 0);
+        pt_iface->initMapPage(DEFAULT_MAPPING_ID, 0x5000, 0xF5000, 0);
     }
 }
 
@@ -144,8 +146,8 @@ bool TestOSComponent::clockTick(SST::Cycle_t x)
             out->verbose(CALL_INFO, 1, 0, "tick %d!\n", tick_counter);
             //pt_iface->mapPage(1, 0x4000, 0xF4000, 0); //mapped at init
             //pt_iface->mapPage(1, 0x5000, 0xF5000, 0); //mapped at init
-            pt_iface->mapPage(1, 0x6000, 0xF6000, 0);
-            pt_iface->mapPage(1, 0x7000, 0xF7000, 0);
+            pt_iface->mapPage(DEFAULT_MAPPING_ID, 0x6000, 0xF6000, 0);
+            pt_iface->mapPage(DEFAULT_MAPPING_ID, 0x7000, 0xF7000, 0);
             state++;
             break;
         }
@@ -166,8 +168,8 @@ bool TestOSComponent::clockTick(SST::Cycle_t x)
 
             //Unmap 4 and 5, leave 6 and 7 intact
             out->verbose(CALL_INFO, 1, 0, "tick %d!\n", tick_counter);
-            pt_iface->unmapPage(1, 0x4000, 0);
-            pt_iface->unmapPage(1, 0x5000, 0);
+            pt_iface->unmapPage(DEFAULT_MAPPING_ID, 0x4000, 0);
+            pt_iface->unmapPage(DEFAULT_MAPPING_ID, 0x5000, 0);
             state++;
             break;
         }
