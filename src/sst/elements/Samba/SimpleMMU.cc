@@ -1,4 +1,5 @@
 #include <sst_config.h>
+#include <stdexcept>
 #include "SimpleMMU.h"
 
 using namespace SST;
@@ -27,6 +28,29 @@ using SST::MemHierarchy::Addr;
 // #define _L3_  CALL_INFO,3,0   //external events
 // #define _L5_  CALL_INFO,5,0   //internal transitions
 // #define _L10_  CALL_INFO,10,0 //everything
+
+
+
+template <typename ...Args>
+std::string strPrintf(const char *format, Args && ...args)
+{
+    char buff[512];
+    snprintf(buff, sizeof(buff), format, std::forward<Args>(args)...);
+    return std::string(buff); //good enough, if we want to autoallocate stuff we can check retval on sprintf
+
+    // // precalculate size
+    // auto size = std::snprintf(nullptr, 0, format, std::forward<Args>(args)...);
+
+    // // Sprintf and create string
+    // char *buff = (char*) calloc(1, size + 1); //allocate and zero
+    // std::snprintf(buff, size, format, std::forward<Args>(args)...);
+    // std::string str = std::string(buff);
+    // delete buff;
+
+    // return str;
+}
+
+
 
 
 SimpleMMU::SimpleMMU(SST::ComponentId_t id, SST::Params& params): Component(id) {
@@ -119,18 +143,27 @@ void SimpleMMU::handleMappingEvent(SST::Event *ev) {
 // returns a response mapping-event
 SimpleMMU::MappingEvent* SimpleMMU::handleMappingEventInner(SimpleMMU::MappingEvent* map_ev) {
     //map_ev should be non_null
+    //if requested mapping doesn't exist, exit with error
 
     switch(map_ev->type) {
+        case SimpleMMU::MappingEvent::eventType::CREATE_MAPPING:
+            out->verbose(_L3_, "Creating mapping with id=%lu\n", map_ev->map_id);
+
+            // crash out if already exists
+            sst_assert(pagetables_map.find(map_ev->map_id) == pagetables_map.end(), CALL_INFO, -1, 
+                    "ERROR: Trying to create page mapping #%lu which already exists\n", map_ev->map_id);
+
+            pagetables_map[map_ev->map_id] = PageTable();
+            break;
+
         case SimpleMMU::MappingEvent::eventType::MAP_PAGE:
             out->verbose(_L3_, "Mapping page at VA=0x%lx, PA=0x%lx\n", map_ev->v_addr, map_ev->p_addr);
-            PT_mapPage(map_ev->v_addr, map_ev->p_addr, 0); //no flags for now
-            //TODO: we'll have multiple maps keyed by map_ev->map_id
+            getMap(map_ev->map_id)->mapPage(map_ev->v_addr, map_ev->p_addr, 0); //no flags for now
             break;
 
         case SimpleMMU::MappingEvent::eventType::UNMAP_PAGE:
             out->verbose(_L3_, "Unmapping page at VA=0x%lx\n", map_ev->v_addr);
-            PT_unmapPage(map_ev->v_addr, 0); //no flags for now
-            //TODO: we'll have multiple maps keyed by map_ev->map_id
+            getMap(map_ev->map_id)->unmapPage(map_ev->v_addr, 0); //no flags for now
             break;
         default:
             out->verbose(_L1_, "Event type %s not handled (noop)\n", map_ev->getTypeString().c_str());
@@ -220,7 +253,8 @@ Addr SimpleMMU::translatePage(Addr virtPageAddr) {
     // Returns physical page addr
     // On page fault, crash out (TODO: change this?)
     
-    PageTableEntry ent = PT_lookup(virtPageAddr);
+    PageTable *pt = getMap(1); //TODO TEMP: (need to specfiy the actual map_id somehow)
+    PageTableEntry ent = pt->lookup(virtPageAddr);
 
     
     if(!ent.isValid()) {
@@ -280,46 +314,54 @@ Addr SimpleMMU::translatePage(Addr virtPageAddr) {
 // ========================================================================
 
 
+
 //typedef struct { //must be 4k aliged
 //    Addr v_addr;
 //    Addr p_addr;
 //    uint64_t flags; //TODO: add getters and setters? (isValid, etc)
 //} PageTableEntry;
 //
-//std::map<MemHierarchy::Addr, PageTableEntry> PT_map;
+//std::map<MemHierarchy::Addr, PageTableEntry> PTE_map;
 
-void SimpleMMU::PT_mapPage(Addr v_addr, Addr p_addr, uint64_t flags) {
-    sst_assert(IS_4K_ALIGNED(v_addr) && IS_4K_ALIGNED(p_addr), CALL_INFO, -1, "ERROR: addresses must be 4K aligned\n");
+void SimpleMMU::PageTable::mapPage(Addr v_addr, Addr p_addr, uint64_t flags) {
+    if (!(IS_4K_ALIGNED(v_addr) && IS_4K_ALIGNED(p_addr)))
+        { throw std::invalid_argument("ERROR: addresses must be 4K aligned\n"); }
 
-    //error if already exists (QUESTION: should this more permissive?)   
-    auto it = PT_map.find(v_addr);
-    sst_assert(it == PT_map.end(), CALL_INFO, -1, "ERROR: PageTable mapping page over an existing mapping at VA=0x%lx\n", v_addr);
+    //error if ALREADY DOES exist (QUESTION: should this more permissive?)
+    auto it = PTE_map.find(v_addr);
+    if(it != PTE_map.end())
+            { throw std::invalid_argument(strPrintf(
+            "ERROR: PageTable mapping page over an existing mapping at VA=0x%lx\n", v_addr)); }
 
-    PT_map[v_addr] = PageTableEntry(v_addr, p_addr, flags | PT_FL_VALID);
+    PTE_map[v_addr] = PageTableEntry(v_addr, p_addr, flags | PT_FL_VALID);
 }
 
-void SimpleMMU::PT_unmapPage(Addr v_addr, uint64_t flags) {
-    sst_assert(IS_4K_ALIGNED(v_addr), CALL_INFO, -1, "ERROR: addresses must be 4K aligned\n");
+void SimpleMMU::PageTable::unmapPage(Addr v_addr, uint64_t flags) {
+    if (!IS_4K_ALIGNED(v_addr))
+        { throw std::invalid_argument("ERROR: addresses must be 4K aligned\n"); }
 
-    //error if it does not exist (QUESTION: should this more permissive?)   
-    auto it = PT_map.find(v_addr);
-    sst_assert(it != PT_map.end(), CALL_INFO, -1, "ERROR: PageTable unmap called when no mapping exists at VA=0x%lx\n", v_addr);
+    //error if it DOES NOT exist (QUESTION: should this more permissive?)   
+    auto it = PTE_map.find(v_addr);
+    if(it == PTE_map.end())
+            { throw std::invalid_argument(strPrintf(
+            "ERROR: PageTable unmap called when no mapping exists at VA=0x%lx\n", v_addr)); }
 
-    PT_map.erase(it);
+    PTE_map.erase(it);
 }
 
 //TODO: add a PT exists call? because we can have either the PTE doesn't exist in PT_map or it exists but is invalid
 
-SimpleMMU::PageTableEntry SimpleMMU::PT_lookup(Addr v_addr) {
+SimpleMMU::PageTableEntry SimpleMMU::PageTable::lookup(Addr v_addr) {
     //returns (by value) the pagetable entry
     //if no mapped page, returns a pageTableEntry with isValid() false and addresses set to -1)
     
-    sst_assert(IS_4K_ALIGNED(v_addr), CALL_INFO, -1, "ERROR: address must be 4K aligned\n");
+    if (!IS_4K_ALIGNED(v_addr))
+        { throw std::invalid_argument("ERROR: addresses must be 4K aligned\n"); }
     //TODO: with hugepages, should this be made more lenient? probably
     
-    auto it = PT_map.find(v_addr);
+    auto it = PTE_map.find(v_addr);
 
-    if (it == PT_map.end()) { //if not found
+    if (it == PTE_map.end()) { //if not found
         return PageTableEntry(v_addr, -1, 0 & ~PT_FL_VALID); //just to be explicit, 
     } else {
         PageTableEntry ent = it->second;

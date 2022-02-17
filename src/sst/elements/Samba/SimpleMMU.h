@@ -53,7 +53,6 @@ class SimpleMMU : public SST::Component {
 
 
 
-
     public:
 
         // REGISTER THIS COMPONENT INTO THE ELEMENT LIBRARY
@@ -78,24 +77,100 @@ class SimpleMMU : public SST::Component {
         )
 
 
+    //=================== Internal Classes: (defined at bottom)
+
+    public:
+        class MappingEvent; // map page, unmap page, etc
+        //class TranslateEvent; // translate-virt-page;  (will we need this? rn we just take memevents)
+        //enum { PAGE_FAULT, PAGE_FAULT_RESPONSE, PAGE_FAULT_SERVED, 
+        //        SHOOTDOWN, PAGE_REFERENCE, SDACK } Translate_EventType ; (will we need these?)
+
+    private:
+        class PageTableEntry;
+        class PageTable;
+
+    //Flags:
+    static const uint64_t PT_FL_VALID = 1 << 0;
+    //TODO: come up with more of these and number them in a more sensible way
 
 
-    // For later??
-    //enum { PAGE_FAULT, PAGE_FAULT_RESPONSE, PAGE_FAULT_SERVED, SHOOTDOWN, PAGE_REFERENCE, SDACK } Translate_EventType ;
+
+    public:
+        // ???
+        SimpleMMU(SST::ComponentId_t id, SST::Params& params);
+
+        void handleMappingEvent(Event *ev); // handles event from OS: adjusts mappings, sends back response on link
+                                            // (delegates body to ...Inner() function)
+        void handleTranslationEvent(Event *ev, int tlb_link_index); // translate memEvents from tlbs
 
 
-    class MappingEvent; // map page, unmap page, etc
-    class TranslateEvent; // translate-virt-page;  page faults?;
+        MappingEvent* handleMappingEventInner(MappingEvent *map_ev); 
+        // inner function to execute mapping events (called from init handler or main handler)
+        // returns response mapping_event
+
+        // = init stuff overrides
+        void init(unsigned int phase) override;  //called repeatedly during init (per each phase)
+
+    private:
+    
+
+        // === Private Members:
+        SST::Output* out; // SST Output object, for printing, error messages, etc.
+
+        SST::Link* link_from_os;  // link to whoever is creating mappings
+        std::vector<SST::Link*> v_link_from_tlb; // incoming memEvent translation requests (one per link)
+
+        std::map<int, PageTable> pagetables_map;
+
+        // ==== Page-table data structure function: eventually will be in own class
+        // TODO: split out into own class
+        
+        
 
 
+        //void PT_mapPage(Addr v_addr, Addr p_addr, uint64_t flags);
+        //void PT_unmapPage(Addr v_addr, uint64_t flags);
+        //PageTableEntry PT_lookup(Addr v_addr);
+        
+        // ====================================
 
-    class MappingEvent : public SST::Event  {
+        
+        // === Private Methods:
+
+
+        //Transates mEv, returns new m_ev
+        SST::MemHierarchy::MemEvent* translateMemEvent(SST::MemHierarchy::MemEvent *mEv);
+
+        //Pure function to translate just a virt addr to physaddr
+        SST::MemHierarchy::Addr      translatePage(SST::MemHierarchy::Addr virtPageAddr);
+
+
+        //gets the corresponding map or returns a verbose error
+        PageTable *getMap(uint64_t id) {
+            auto it = pagetables_map.find(id);
+            sst_assert(it != pagetables_map.end(), CALL_INFO, -1, 
+                    "ERROR: Trying to access MMU mapping #%lu, which doesn't exist\n", id);
+            return &(it->second);
+        }
+
+
+        // ==== End of SimpleMMU members
+
+    // =========================================================================
+    //
+    //                        INTERNAL CLASSES
+    //
+    // =========================================================================
+    
+
+    public: class MappingEvent : public SST::Event  {
         public:
 
             // =========== EventType Enum and static helper func
+            
             typedef enum { ERR_EVENT=0, CREATE_MAPPING,   MAP_PAGE,   UNMAP_PAGE,   MAP_ANON_PAGE } eventType ;
 
-            //Just turn enum vals into strings, cause all the other ways seems messier
+            //func to turn enum vals into strings, haven't found a cleaner way to do it automagically
             #define RETURN_CASE_STR(s)  case s: return #s
             static std::string getEventName(eventType t) {
                 switch(t) {
@@ -148,15 +223,12 @@ class SimpleMMU : public SST::Component {
             // Register this event as serializable
             ImplementSerializable(SimpleMMU::MappingEvent);
 
-
-
-
         public:
             std::string getString() {
                 char str_buff[512];
                 snprintf(str_buff, sizeof(str_buff),
-                        "<MappingEvent: type: %s, VA 0x%lx, PA 0x%lx, size: 0x%lx>",
-                        getEventName(type).c_str(), v_addr, p_addr, size);
+                        "<MappingEvent: type: %s, id%lu, VA 0x%lx, PA 0x%lx, size: 0x%lx>",
+                        getEventName(type).c_str(), map_id, v_addr, p_addr, size);
                 return std::string(str_buff);
             }
 
@@ -164,81 +236,41 @@ class SimpleMMU : public SST::Component {
                 return getEventName(type);
             }
 
-    }; //class MappingEvent
+    }; // end class MappingEvent ==============================================
 
 
+    private: class PageTableEntry { // ===============================================
+        public:
 
-    public:
-        // ???
-        SimpleMMU(SST::ComponentId_t id, SST::Params& params);
+        //must be 4k aligned
+        Addr v_addr;
+        Addr p_addr;
+        uint64_t flags; //TODO: add getters and setters? (isValid, etc)
 
+        //Empty page table entry should be invalid
+        PageTableEntry(): v_addr(-1), p_addr(-1), flags(0 & ~PT_FL_VALID) {};
 
-        void handleMappingEvent(Event *ev); // handles event from OS: adjusts mappings, sends back response on link
-                                            // (delegates body to ...Inner() function)
-        void handleTranslationEvent(Event *ev, int tlb_link_index); // translate memEvents from tlbs
+        PageTableEntry(Addr v, Addr p, uint64_t flags):
+            v_addr(v),
+            p_addr(p),
+            flags(flags)
+        {}
 
-
-        MappingEvent* handleMappingEventInner(MappingEvent *map_ev); 
-        // inner function to execute mapping events (called from init handler or main handler)
-        // returns response mapping_event
-
-        // = init stuff overrides
-        void init(unsigned int phase) override;  //called repeatedly during init (per each phase)
-
-    private:
-    
-
-        // === Private Members:
-        SST::Output* out; // SST Output object, for printing, error messages, etc.
-
-        SST::Link* link_from_os;  // link to whoever is creating mappings
-        std::vector<SST::Link*> v_link_from_tlb; // incoming memEvent translation requests (one per link)
-
-        // ==== Page-table data structure function: eventually will be in own class
-        // TODO: split out into own class
-        
-        
-        //== Flags?
-        //TODO: come up with more of these and number them properly
-        static const uint64_t PT_FL_VALID = 1 << 0;
-        
-        class PageTableEntry {
-            public:
-
-            //must be 4k aligned
-            Addr v_addr;
-            Addr p_addr;
-            uint64_t flags; //TODO: add getters and setters? (isValid, etc)
-
-            //Empty page table entry should be invalid
-            PageTableEntry(): v_addr(-1), p_addr(-1), flags(0 & ~PT_FL_VALID) {};
-
-            PageTableEntry(Addr v, Addr p, uint64_t flags):
-                v_addr(v),
-                p_addr(p),
-                flags(flags)
-            {}
-
-            bool isValid() {
-                return (flags & PT_FL_VALID) != 0;
-            }
-        };
-
-        std::map<MemHierarchy::Addr, PageTableEntry> PT_map;
-        void PT_mapPage(Addr v_addr, Addr p_addr, uint64_t flags);
-        void PT_unmapPage(Addr v_addr, uint64_t flags);
-        PageTableEntry PT_lookup(Addr v_addr);
-        // ====================================
-
-        
-        // === Private Methods:
+        bool isValid() {
+            return (flags & PT_FL_VALID) != 0;
+        }
+    }; // end class PageTableEntry =====
 
 
-        //Transates mEv, returns new m_ev
-        SST::MemHierarchy::MemEvent* translateMemEvent(SST::MemHierarchy::MemEvent *mEv);
+    private: class PageTable { //==================================================
+        public:
+            void mapPage(Addr v_addr, Addr p_addr, uint64_t flags);
+            void unmapPage(Addr v_addr, uint64_t flags);
+            PageTableEntry lookup(Addr v_addr);
 
-        //Pure function to translate just a virt addr to physaddr
-        SST::MemHierarchy::Addr      translatePage(SST::MemHierarchy::Addr virtPageAddr);
+        private:
+            std::map<MemHierarchy::Addr, PageTableEntry> PTE_map;
+    }; // end class PageTable ====
 };
 
 } //namespace SambaComponent
@@ -247,46 +279,3 @@ class SimpleMMU : public SST::Component {
 
 
 #endif /* PAGETABLE_H */
-
-
-
-
-
-
-
-
-// ============================= CODE FOR LATER::::
-//
-//
-//    // Thie defines a class for events of Samba
-//    class PTEvent : public SST::Event
-//    {
-//
-//        private:
-//        SambaEvent() { } // For serialization
-//
-//            int ev;
-//            uint64_t address;
-//            uint64_t paddress;
-//            uint64_t size;
-//        public:
-//
-//            SambaEvent(EventType y) : SST::Event()
-//        { ev = y;}
-//
-//            void setType(int ev1) { ev = static_cast<EventType>(ev1);}
-//            int getType() { return ev; }
-//
-//            void setResp(uint64_t add, uint64_t padd, uint64_t sz) { address = add; paddress = padd; size = sz;}
-//            uint64_t getAddress() { return address; }
-//            uint64_t getPaddress() { return paddress; }
-//            uint64_t getSize() { return size; }
-//
-//            void serialize_order(SST::Core::Serialization::serializer &ser) override {
-//                Event::serialize_order(ser);
-//            }
-//
-//
-//        ImplementSerializable(SambaEvent);
-//
-//    };
