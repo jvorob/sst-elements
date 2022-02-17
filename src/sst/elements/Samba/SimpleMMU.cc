@@ -88,6 +88,14 @@ SimpleMMU::SimpleMMU(SST::ComponentId_t id, SST::Params& params): Component(id) 
     out->verbose(_L1_, "Loaded %d ports named 'link_from_tlb*' \n", tlb_i);
 
 
+    // == Load mapping_ids for the tlb links, check length
+    params.find_array<uint64_t>("tlb_mapping_ids", v_tlb_mapping_ids); //appends to end
+    int num_ids = v_tlb_mapping_ids.size();
+    sst_assert(num_ids != 0, CALL_INFO, -1, 
+            "Error in SimpleMMU: Parameter 'tlb_mapping_ids' not specified\n");
+    sst_assert(num_ids == tlb_i, CALL_INFO, -1, 
+            "Error in SimpleMMU: Parameter 'tlb_mapping_ids' should have 1 id for each link_from_tlb. "
+            "Expected %d, got %d\n", tlb_i, num_ids);
 }
 
 
@@ -185,8 +193,9 @@ void SimpleMMU::handleTranslationEvent(SST::Event *ev, int tlb_link_index) {
             tlb_link_index, mem_ev->getVerboseString().c_str());
     
     // Translate and send back
-    uint64_t map_id = tlb_link_index; //TODO TEMP: assume link 0 goes with mapping 0 for now
+    uint64_t map_id = v_tlb_mapping_ids[tlb_link_index]; // lookup id for given link (should always exist)
     MemEvent *translated_mem_ev = translateMemEvent(map_id, mem_ev);
+
     out->verbose(_L5_, "Sending back translated MemEvent to TLB\n");
     delete mem_ev; //delete original, we send back a copy
 

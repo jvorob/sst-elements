@@ -42,6 +42,7 @@ SC_pt_interface.addParams({
 C_mmu = sst.Component("mmu", "Samba.SimpleMMU")
 C_mmu.addParams({
     "verbose": 10,
+    "tlb_mapping_ids": [0], #1 tlb, it uses pagetable-0
 })
 
 

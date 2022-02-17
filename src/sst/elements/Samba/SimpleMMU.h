@@ -68,6 +68,7 @@ class SimpleMMU : public SST::Component {
 
         SST_ELI_DOCUMENT_PARAMS(
             {"verbose", "(uint) Output verbosity for warnings/errors. 0[fatal error only], 1[warnings], 2[full state dump on fatal error]","1"},
+            {"tlb_mapping_ids", "(uint[]) mapping_ids, corresponding to each link_from_tlb%d","[]"},
         )
 
         SST_ELI_DOCUMENT_PORTS(
@@ -94,6 +95,7 @@ class SimpleMMU : public SST::Component {
     //TODO: come up with more of these and number them in a more sensible way
 
 
+    //=================== Members:
 
     public:
         // ???
@@ -119,6 +121,7 @@ class SimpleMMU : public SST::Component {
 
         SST::Link* link_from_os;  // link to whoever is creating mappings
         std::vector<SST::Link*> v_link_from_tlb; // incoming memEvent translation requests (one per link)
+        std::vector<uint64_t>   v_tlb_mapping_ids; // mapping_id for each link
 
         std::map<int, PageTable> pagetables_map;
 
