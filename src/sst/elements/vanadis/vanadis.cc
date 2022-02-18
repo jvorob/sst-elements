@@ -25,6 +25,13 @@
 #include <sst/core/output.h>
 #include <vector>
 
+
+//TODO TEMP JAN
+#define ALIGN4K_UP(x)  (((x) + 0xFFFL) & ~(0xFFFL))
+#define ALIGN4K_DOWN(x) ((x) & ~(0xFFFL))
+
+#define TEMP_MAPPING_ID 0 // for virtual-memory mapping
+
 using namespace SST::Vanadis;
 
 VANADIS_COMPONENT::VANADIS_COMPONENT(SST::ComponentId_t id, SST::Params& params) : Component(id), current_cycle(0)
@@ -1831,6 +1838,11 @@ VANADIS_COMPONENT::init(unsigned int phase)
     // Pull in all the binary contents and push this into the memory system
     // everything should be correctly up and running by now (components, links
     // etc)
+
+    //TODO: TEMP JAN
+    //binary_elf_info->print(output);
+    //output->fatal(CALL_INFO, -1, "DEBUG: Done printing");
+
     if ( 0 == phase ) {
         if ( nullptr != binary_elf_info ) {
             if ( 0 == core_id ) {
@@ -1844,197 +1856,387 @@ VANADIS_COMPONENT::init(unsigned int phase)
                 }
 
                 std::vector<uint8_t> initial_mem_contents;
-                uint64_t             max_content_address = 0;
-                uint64_t             min_content_address = (uint64_t)-1; //TODO TEMP JVOROBY
+                //=========TODO: Jan's cool new loading code
+                // Record bounds: Working off the assumption that the last loaded segments is the BSS segment
+                size_t data_start = ~0UL; // First byte in VA space (inclusive)
+                size_t data_end = 0;   // end of data loaded from file (in VA space) (exclusive)
+                size_t bss_end = 0;    // end of zeroed-data in VA space  (i.e. max(va+memsz), will be >= end_data) (exclusive)
+                size_t file_end = 0;   // end of bytes loaded from file
 
-                // Find the max value we think we are going to need to place entries up
-                // to
+                for( size_t i = 0; i < binary_elf_info->countProgramHeaders(); ++i ) { 
+                    const VanadisELFProgramHeaderEntry* p_hdr = binary_elf_info->getProgramHeader(i);
 
-                for ( size_t i = 0; i < binary_elf_info->countProgramHeaders(); ++i ) {
-                    const VanadisELFProgramHeaderEntry* next_prog_hdr = binary_elf_info->getProgramHeader(i);
-                    max_content_address                               = std::max(
-                        max_content_address,
-                        (uint64_t)next_prog_hdr->getVirtualMemoryStart() + next_prog_hdr->getHeaderImageLength());
+                    if( (PROG_HEADER_LOAD == p_hdr->getHeaderType()) ) { 
+                        size_t offset = p_hdr->getImageOffset();
+                        size_t va     = p_hdr->getVirtualMemoryStart();
+                        size_t filesz = p_hdr->getHeaderImageLength(); 
+                        size_t memsz  = p_hdr->getHeaderMemoryLength();
 
-                    //headers don't actually load any data??
-                    // if(0 != next_prog_hdr->getHeaderImageLength()) { //TODO TEMP JVOROBY
-                    //     min_content_address = std::min(min_content_address, (uint64_t)next_prog_hdr->getVirtualMemoryStart());
-                    // }
-                }
+                        // === INVARIANTS???  (none of this code does useful work)
+                        // (a bunch of these aren't actually guaranteed, but I think are true in all ELFS
+                        //  that haven't been like, doctored or whatever? Let's just assert em for now and
+                        //  comment em out + document it when we find counterexamples)
+                        
 
-                for ( size_t i = 0; i < binary_elf_info->countProgramSections(); ++i ) {
-                    const VanadisELFProgramSectionEntry* next_sec = binary_elf_info->getProgramSection(i);
-                    max_content_address                           = std::max(
-                        max_content_address, (uint64_t)next_sec->getVirtualMemoryStart() + next_sec->getImageLength());
+                        //  output->verbose(CALL_INFO, 20, 0, "-> Bounds so far: data_start 0x%lx, data_end 0x%lx, bss_end 0x%lx\n",
+                        //          data_start, data_end, bss_end);
+                        //  output->verbose(CALL_INFO, 20, 0, "-> Segment %d: va 0x%lx, offset 0x%lx, filesz 0x%lx, memsz 0x%lx\n",
+                        //          i, va, offset, filesz, memsz);
 
-                    //some sections have VA 0 or size 0 and aren't actually loaded: ignore them for min
-                    if(0 != next_sec->getVirtualMemoryStart() && 0 != next_sec->getImageLength()) { //TODO TEMP JVOROBY
-                        min_content_address = std::min(min_content_address, (uint64_t)next_sec->getVirtualMemoryStart());
+                        //  output->verbose(CALL_INFO, 20, 0, "--> DEBUGGING ALIGN: AL_DWN(va) 0x%lx, AL_UP(va) 0x%lx\n",
+                        //          ALIGN4K_DOWN(va), ALIGN4K_UP(va));
+
+
+                        // This one I believe has to be true, otherwise mmap elf-loading isn't possible
+                        sst_assert(va % 4096 == offset % 4096, CALL_INFO, -1, "ELF segment %d: VA and offset not congruent mod 4k\n", i);
+
+                        //Load shouldn't overlap bounds of previous loads? (THIS ONE MIGHT NOT BE TRUE ALWAYS)
+                        //(INCORRECTNESS: this is too strict: it checks if it comes after or before all other loads,
+                        //  doesn't allow for loading things into gaps, 
+                        //  but that probably won't happen in naturally occurring elves)
+                        sst_assert(ALIGN4K_DOWN(va) >= ALIGN4K_UP(bss_end) || ALIGN4K_UP(va+memsz) <= ALIGN4K_DOWN(data_start),
+                                CALL_INFO, -1, "UNEXPECTED: ELF segment %d: overlaps preceding segments\n", i);
+
+                        // Having only the last segment have BSS data is NOT REQUIRED, but seems to be true almost always?
+                        sst_assert(data_end == bss_end, CALL_INFO, -1, "UNEXPECTED: Preceding ELF segment had BSS data but wasn't final LOAD\n");
+                        //only way bss_end > data_end is if a preceding LOAD segment had memsz>filesz
+                        
+                        // == end invariants
+
+                        if (va < data_start)          { data_start = va; }        // min(va)
+                        if (va+filesz > data_end)     { data_end   = va+filesz; } // max(va+filesz)
+                        if (va+memsz > bss_end)       { bss_end    = va+memsz; }  // max(va+memsz)
+                        if (offset+filesz > file_end) { file_end   = offset+filesz; }  // max(offset+filesz)
                     }
                 }
 
+                //======== Old bounds-finding code
+                // uint64_t             max_content_address = 0;
+                // uint64_t             min_content_address = (uint64_t)-1; //TODO TEMP JVOROBY
+
+                // // Find the max value we think we are going to need to place entries up
+                // // to
+
+                // for ( size_t i = 0; i < binary_elf_info->countProgramHeaders(); ++i ) {
+                //     const VanadisELFProgramHeaderEntry* next_prog_hdr = binary_elf_info->getProgramHeader(i);
+                //     max_content_address                               = std::max(
+                //         max_content_address,
+                //         (uint64_t)next_prog_hdr->getVirtualMemoryStart() + next_prog_hdr->getHeaderImageLength());
+
+                //     //headers don't actually load any data??
+                //     // if(0 != next_prog_hdr->getHeaderImageLength()) { //TODO TEMP JVOROBY
+                //     //     min_content_address = std::min(min_content_address, (uint64_t)next_prog_hdr->getVirtualMemoryStart());
+                //     // }
+                // }
+
+                // for ( size_t i = 0; i < binary_elf_info->countProgramSections(); ++i ) {
+                //     const VanadisELFProgramSectionEntry* next_sec = binary_elf_info->getProgramSection(i);
+                //     max_content_address                           = std::max(
+                //         max_content_address, (uint64_t)next_sec->getVirtualMemoryStart() + next_sec->getImageLength());
+
+                //     //some sections have VA 0 or size 0 and aren't actually loaded: ignore them for min
+                //     if(0 != next_sec->getVirtualMemoryStart() && 0 != next_sec->getImageLength()) { //TODO TEMP JVOROBY
+                //         min_content_address = std::min(min_content_address, (uint64_t)next_sec->getVirtualMemoryStart());
+                //     }
+                // }
+
                 output->verbose(
                     CALL_INFO, 2, 0,
-                    "-> expecting max address for initial binary load is "
-                    "0x%llx, zeroing the memory\n",
-                    max_content_address);
-                output->verbose(
-                    CALL_INFO, 2, 0,
-                    "-> expecting min address for initial binary load is 0x%llx\n",
-                    min_content_address); //TODO TEMP JVOROBY
-                initial_mem_contents.resize(max_content_address, (uint8_t)0);
+                    "-> binary load: expecting min VA=0x%llx, max VA(data)=0x%llx, max VA(BSS)=0x%llx;"
+                    " Zeroing the memory\n",
+                    data_start, data_end, bss_end);
+                initial_mem_contents.resize(ALIGN4K_UP(bss_end), (uint8_t)0);
 
                 // Populate the memory with contents from the binary
-                output->verbose(CALL_INFO, 2, 0, "-> populating memory contents with info from the executable...\n");
-                /*
-                                                for( size_t i = 0; i <
-                   binary_elf_info->countProgramHeaders(); ++i ) { const
-                   VanadisELFProgramHeaderEntry* next_prog_hdr =
-                   binary_elf_info->getProgramHeader(i);
+                //
+                
 
-                                                        if( (PROG_HEADER_LOAD ==
-                   next_prog_hdr->getHeaderType()) ) { output->verbose(CALL_INFO, 2, 0,
-                   ">> Loading Program Header from executable at %p, len=%" PRIu64
-                   "...\n", (void*) next_prog_hdr->getImageOffset(),
-                   next_prog_hdr->getHeaderImageLength()); output->verbose(CALL_INFO, 2,
-                   0, ">>>> Placing at virtual address: %p\n", (void*)
-                   next_prog_hdr->getVirtualMemoryStart());
+                //======= Old Loading code
+                
+                // TRUE THINGS ABOUT ELF LOADING (I think)
+                // - We only need to touch program headers (segments) marked LOAD
+                // - mem_size IS ALWAYS >= file_size
+                // - all LOAD segments will have offset and VA congruent module page size
+                // - If 2 LOAD segments have different RWX permissions, they WILL NEVER OVERLAP onto the same virtual OR PHYSICAL page
+                // == MAYBE:
+                // - 2 LOAD segments will NEVER OVERLAP onto the same virtual page?
+                // - almost all naturally occurring ELF's will have exactly one segment with memsz != filesz,
+                //      this will be the R/W BSS segment
+                //      it will be the last segment in the list of headers AND by VA
+                //
+                // 
+                
+                
+                size_t pa_offset = 0x800000;
 
-                                                                // Note - padding
-                   automatically zeros because we perform a resize with parameter 0
-                   given const uint64_t padding = 4096 -
-                   ((next_prog_hdr->getVirtualMemoryStart() +
-                   next_prog_hdr->getHeaderImageLength()) % 4096);
+                output->verbose(CALL_INFO, 2, 0, "-> populating memory contents (at PA=0x%lx) with info from the executable...\n",
+                    pa_offset);
 
-                                                                // Do we have enough
-                   space in the memory image, if not, extend and zero if(
-                   initial_mem_contents.size() < (
-                   next_prog_hdr->getVirtualMemoryStart() +
-                   next_prog_hdr->getHeaderImageLength() )) {
-                                                                        initial_mem_contents.resize(
-                   ( next_prog_hdr->getVirtualMemoryStart() +
-                   next_prog_hdr->getHeaderImageLength()
-                                                                                +
-                   padding), 0);
-                                                                }
 
-                                                                fseek( exec_file,
-                   next_prog_hdr->getImageOffset(), SEEK_SET ); fread(
-                   &initial_mem_contents[ next_prog_hdr->getVirtualMemoryStart() ],
-                                                                        next_prog_hdr->getHeaderImageLength(),
-                   1, exec_file);
-                                                        }
-                                                }
-                */
-                for ( size_t i = 0; i < binary_elf_info->countProgramSections(); ++i ) {
-                    const VanadisELFProgramSectionEntry* next_sec = binary_elf_info->getProgramSection(i);
+                // if(pageTableInterface != nullptr) {
+                //     output->verbose(CALL_INFO, 2, 0, "[vmem]-> Slurping %ld bytes of ELF file into memory at pa=0x%lx\n", 
+                //             file_end, pa_file_start);
+                //     fseek( exec_file, 0, SEEK_SET ); 
+                //     fread( &initial_mem_contents[ 0 ], file_end, 1, exec_file);
+                // }
 
-                    if ( SECTION_HEADER_PROG_DATA == next_sec->getSectionType() ) {
-                        output->verbose(
-                            CALL_INFO, 2, 0,
-                            ">> Loading Section (%" PRIu64 ") from executable at: 0x%0llx, len=%" PRIu64 "...\n",
-                            next_sec->getID(), next_sec->getVirtualMemoryStart(), next_sec->getImageLength());
+                if (pageTableInterface != nullptr) {  //Need to initialize memory-mapping before we can start mapping pages
+                    pageTableInterface->initCreateMapping(TEMP_MAPPING_ID); //
+                }
 
-                        if ( next_sec->getVirtualMemoryStart() > 0 ) {
-                            const uint64_t padding =
-                                4096 - ((next_sec->getVirtualMemoryStart() + next_sec->getImageLength()) % 4096);
+                for( size_t i = 0; i < binary_elf_info->countProgramHeaders(); ++i ) { 
+                    const VanadisELFProgramHeaderEntry* p_hdr = binary_elf_info->getProgramHeader(i);
 
-                            // Executable data, let's load it in
-                            if ( initial_mem_contents.size() <
-                                 (next_sec->getVirtualMemoryStart() + next_sec->getImageLength()) ) {
-                                size_t size_now = initial_mem_contents.size();
-                                initial_mem_contents.resize(
-                                    next_sec->getVirtualMemoryStart() + next_sec->getImageLength() + padding, 0);
-                            }
+                    if( (PROG_HEADER_LOAD == p_hdr->getHeaderType()) ) {
+                        size_t offset = p_hdr->getImageOffset();
+                        size_t va     = p_hdr->getVirtualMemoryStart();
+                        size_t filesz = p_hdr->getHeaderImageLength(); 
+                        size_t memsz  = p_hdr->getHeaderMemoryLength();
+                        //p_hdr->getAlignment();
+                        //p_hdr->getSegmentFlags();
+                        
 
-                            // Find the section and read it all in
-                            fseek(exec_file, next_sec->getImageOffset(), SEEK_SET);
-                            fread(
-                                &initial_mem_contents[next_sec->getVirtualMemoryStart()], next_sec->getImageLength(), 1,
-                                exec_file);
-                        }
-                        else {
-                            output->verbose(CALL_INFO, 2, 0, "--> Not loading because virtual address is zero.\n");
-                        }
-                    }
-                    else if ( SECTION_HEADER_BSS == next_sec->getSectionType() ) {
-                        output->verbose(
-                            CALL_INFO, 2, 0,
-                            ">> Loading BSS Section (%" PRIu64 ") with zeroing at 0x%0llx, len=%" PRIu64 "\n",
-                            next_sec->getID(), next_sec->getVirtualMemoryStart(), next_sec->getImageLength());
+                        output->verbose(CALL_INFO, 2, 0, ">> Loading ELF segment %d (%s): va 0x%lx, offset 0x%lx, filesz 0x%lx, memsz 0x%lx\n",
+                                  i, p_hdr->getFlagsString().c_str(), va, offset, filesz, memsz);
 
-                        if ( next_sec->getVirtualMemoryStart() > 0 ) {
-                            const uint64_t padding =
-                                4096 - ((next_sec->getVirtualMemoryStart() + next_sec->getImageLength()) % 4096);
+                        //output->verbose(CALL_INFO, 2, 0,
+                        //        ">> Loading Program Header from executable at %p, len=%" PRIu64 "...\n", (void*) offset, filesz);
 
-                            // Resize if needed with zeroing
-                            if ( initial_mem_contents.size() <
-                                 (next_sec->getVirtualMemoryStart() + next_sec->getImageLength()) ) {
-                                size_t size_now = initial_mem_contents.size();
-                                initial_mem_contents.resize(
-                                    next_sec->getVirtualMemoryStart() + next_sec->getImageLength() + padding, 0);
-                            }
+                        //output->verbose(CALL_INFO, 2,
+                        //        0, ">>>> Placing at virtual address: %p\n", (void*) va);
 
-                            // Zero out the section according to the Section header info
-                            std::memset(
-                                &initial_mem_contents[next_sec->getVirtualMemoryStart()], 0,
-                                next_sec->getImageLength());
-                        }
-                        else {
-                            output->verbose(CALL_INFO, 2, 0, "--> Not loading because virtual address is zero.\n");
-                        }
-                    }
-                    else {
-                        if ( next_sec->isAllocated() ) {
-                            output->verbose(
-                                CALL_INFO, 2, 0,
-                                ">> Loading Allocatable Section (%" PRIu64 ") at 0x%0llx, len: %" PRIu64 "\n",
-                                next_sec->getID(), next_sec->getVirtualMemoryStart(), next_sec->getImageLength());
+                        // Note - padding automatically zeros because we perform a resize with parameter 0 given 
+                        //const uint64_t padding = 4096 - ((va + filesz) % 4096);
 
-                            if ( next_sec->getVirtualMemoryStart() > 0 ) {
-                                const uint64_t padding =
-                                    4096 - ((next_sec->getVirtualMemoryStart() + next_sec->getImageLength()) % 4096);
+                        sst_assert(initial_mem_contents.size() >= ALIGN4K_UP(va+memsz), CALL_INFO, -1,
+                                "ELF loading: initial_mem_contents should already be set to max size\n");
 
-                                // Resize if needed with zeroing
-                                if ( initial_mem_contents.size() <
-                                     (next_sec->getVirtualMemoryStart() + next_sec->getImageLength()) ) {
-                                    size_t size_now = initial_mem_contents.size();
-                                    initial_mem_contents.resize(
-                                        next_sec->getVirtualMemoryStart() + next_sec->getImageLength() + padding, 0);
-                                }
 
-                                // Find the section and read it all in
-                                fseek(exec_file, next_sec->getImageOffset(), SEEK_SET);
-                                fread(
-                                    &initial_mem_contents[next_sec->getVirtualMemoryStart()],
-                                    next_sec->getImageLength(), 1, exec_file);
+
+                        //=== We're gonna load not just from offset to offset+filesz, but we're gonna expand
+                        //    to load all of the pages that region touches
+                        //    (Not necessary, but better mimics real elf loading which mmaps whole pages)
+                        size_t loadpages_size = ALIGN4K_UP(offset+filesz) - ALIGN4K_DOWN(offset);
+                        assert(loadpages_size > filesz); //sanity check
+
+                        output->verbose(CALL_INFO, 2, 0, "------> Loading 0x%lx bytes from binary at 0x%lx to memory at PA=0x%lx\n",
+                                  loadpages_size, ALIGN4K_DOWN(offset), ALIGN4K_DOWN(va)+pa_offset);
+
+                        fseek(exec_file, ALIGN4K_DOWN(offset), SEEK_SET);
+                        fread(&initial_mem_contents[ALIGN4K_DOWN(va)], loadpages_size, 1, exec_file);
+                        //pa_offset will be added when sending initial_mem_contents to LSQ
+
+
+
+                        // For initializing the page table, we'll need to map not just the data sections but also the BSS
+                        // sections, so loop up to memsz
+                        if (pageTableInterface != nullptr) {
+                            uint64_t flags = 0; //TODO?
+                            for (uint64_t pg_va = ALIGN4K_DOWN(va); pg_va < ALIGN4K_UP(va+memsz); pg_va += 4096) {
+                                uint64_t pg_pa = pg_va + pa_offset; //pa_offset needs to be added now
+                                output->verbose(CALL_INFO, 8, 0, "[vmem]-> Mapping page VA=0x%lx to PA=0x%lx\n", pg_va, pg_pa);
+                                pageTableInterface->initMapPage(TEMP_MAPPING_ID, pg_va, pg_pa, flags);
                             }
                         }
+                        
+
+                        //We've loaded this segment, we've mapped the pages, now zero out any BSS data
+                        //(especially since we loaded the data in full pages, we might have ragged edges where
+                        // we've loaded data beyond filesz)
+                        uint64_t clear_start = va + filesz; //Start clearing right from filesz to memsz
+                        if(memsz > filesz)
+                            { std::memset(&initial_mem_contents[clear_start], 0, memsz-filesz); }
+                        //pa_offset will be added when sending initial_mem_contents to LSQ
+
+
+
+
+                        // Do we have enough space in the memory image, if not, extend and zero 
+                        //if( initial_mem_contents.size() < (va + filesz)) {
+                        //    initial_mem_contents.resize( ( va + filesz + padding), 0);
+                        //}
+                        
+                        //
+                        ////LOAD segments specific offset to offset+filesz, but we expanded that to page boundaries
+                        ////Makes sure it still makes sense
+                        //assert(file_end_page - file_start_page > filesz);
+                        //
+                        //  #IFDEF: NO_VMEM: //Load the segment, expanded out to nearest page boundaries
+                        //      fseek(align_down(offset))
+                        //      fread(initial_mem_contents[align_down(va)], loadpages_size)
+                        //
+                        //  #ELSE // mmap each page
+                        //
+                        //for (pg = 0; pg < loadpages_size; pg += 4096)
+                        //      initMapPage(align_down(va) + pg, pa_file_start + align_down(offset) + pg)
+                        //}
+                        //  #ENDIF
+                        //
+                        // //if memsz > filesz, may also need to map BSS pages
+                        // if(memsz > filesz) {
+                        //
+                        //
+                        //  #IFDEF: NO_VMEM: 
+                        //      //Nothing extra to do, we'll need to zero things out in any case to be safe
+                        //  #ELSE // mmap bonus BSS pages
+                        //
+                        //      //If we have any extra bss pages that need mapping between va+filesz and va+memsz:
+                        //      num_bss_pages = ALIGN4K_UP(va+memsz) - ALIGN4K_UP(va+filesz);
+                        //      for (pg = 0; pg < num_bss_pages*4096; pg += 4096)
+                        //
+                        //          curr_bss_page = ALIGN4K_UP(va+filesz) + pg;
+                        //          assert(curr_bss_page >= va+filesz)
+                        //          assert(curr_bss_page < ALIGN4K_UP(va+memsz))
+                        //
+                        //          new_phys_page = getBlankPhysPage();
+                        //
+                        //          output->verbose(..., ">> Mapping BSS page at va=0x%lx, pa=0x%lx", curr_bss_page, new_phys_page);
+                        //          initMapPage(curr_bss_page, new_page)
+                        //      }
+                        //}
+                        //  #ENDIF
+                        //      // Zero out the BSS area (don't need to expand to page boundaries)
+                        //
+                        //      //start zeroing after filesz, go out to memsz
+                        //
+                        //      if (pageTableInterface == nullptr) { //no vmem, initial_mem is at VA
+                        //          output->verbose(..., ">> Zeroing BSS section from va=0x%lx to before va=0x%lx\n", va+filesz, va+memsz);
+                        //          std::memset(&initial_mem_contents[va+filesz], 0, memsz-filesz);
+                        //      
+                        //      } else { //If we have v-mem: remaining BSS pages aren't part of initial_mem_contents
+                        //          //Only need to zero ragged end of page
+                        //          std::memset(&initial_mem_contents[va+filesz], 0, memsz-filesz);
+                        //      }
+                        //
+                        //      //TODO: should technically only need to zero out to ALIGN4K_UP(va+filesz)
+                        //      //But doesn't hurt to be thorough
+                        // }
+                        //
+                        
+
+
+
                     }
                 }
+                //====== END Old loading code
+
+
+
+                // for ( size_t i = 0; i < binary_elf_info->countProgramSections(); ++i ) {
+                //     const VanadisELFProgramSectionEntry* next_sec = binary_elf_info->getProgramSection(i);
+
+                //     if ( SECTION_HEADER_PROG_DATA == next_sec->getSectionType() ) {
+                //         output->verbose(
+                //             CALL_INFO, 2, 0,
+                //             ">> Loading Section (%" PRIu64 ") from executable at: 0x%0llx, len=%" PRIu64 "...\n",
+                //             next_sec->getID(), next_sec->getVirtualMemoryStart(), next_sec->getImageLength());
+
+                //         if ( next_sec->getVirtualMemoryStart() > 0 ) {
+                //             const uint64_t padding =
+                //                 4096 - ((next_sec->getVirtualMemoryStart() + next_sec->getImageLength()) % 4096);
+
+                //             // Executable data, let's load it in
+                //             if ( initial_mem_contents.size() <
+                //                  (next_sec->getVirtualMemoryStart() + next_sec->getImageLength()) ) {
+                //                 size_t size_now = initial_mem_contents.size();
+                //                 initial_mem_contents.resize(
+                //                     next_sec->getVirtualMemoryStart() + next_sec->getImageLength() + padding, 0);
+                //             }
+
+                //             // Find the section and read it all in
+                //             fseek(exec_file, next_sec->getImageOffset(), SEEK_SET);
+                //             fread(
+                //                 &initial_mem_contents[next_sec->getVirtualMemoryStart()], next_sec->getImageLength(), 1,
+                //                 exec_file);
+                //         }
+                //         else {
+                //             output->verbose(CALL_INFO, 2, 0, "--> Not loading because virtual address is zero.\n");
+                //         }
+                //     }
+                //     else if ( SECTION_HEADER_BSS == next_sec->getSectionType() ) {
+                //         output->verbose(
+                //             CALL_INFO, 2, 0,
+                //             ">> Loading BSS Section (%" PRIu64 ") with zeroing at 0x%0llx, len=%" PRIu64 "\n",
+                //             next_sec->getID(), next_sec->getVirtualMemoryStart(), next_sec->getImageLength());
+
+                //         if ( next_sec->getVirtualMemoryStart() > 0 ) {
+                //             const uint64_t padding =
+                //                 4096 - ((next_sec->getVirtualMemoryStart() + next_sec->getImageLength()) % 4096);
+
+                //             // Resize if needed with zeroing
+                //             if ( initial_mem_contents.size() <
+                //                  (next_sec->getVirtualMemoryStart() + next_sec->getImageLength()) ) {
+                //                 size_t size_now = initial_mem_contents.size();
+                //                 initial_mem_contents.resize(
+                //                     next_sec->getVirtualMemoryStart() + next_sec->getImageLength() + padding, 0);
+                //             }
+
+                //             // Zero out the section according to the Section header info
+                //             std::memset(
+                //                 &initial_mem_contents[next_sec->getVirtualMemoryStart()], 0,
+                //                 next_sec->getImageLength());
+                //         }
+                //         else {
+                //             output->verbose(CALL_INFO, 2, 0, "--> Not loading because virtual address is zero.\n");
+                //         }
+                //     }
+                //     else {
+                //         if ( next_sec->isAllocated() ) {
+                //             output->verbose(
+                //                 CALL_INFO, 2, 0,
+                //                 ">> Loading Allocatable Section (%" PRIu64 ") at 0x%0llx, len: %" PRIu64 "\n",
+                //                 next_sec->getID(), next_sec->getVirtualMemoryStart(), next_sec->getImageLength());
+
+                //             if ( next_sec->getVirtualMemoryStart() > 0 ) {
+                //                 const uint64_t padding =
+                //                     4096 - ((next_sec->getVirtualMemoryStart() + next_sec->getImageLength()) % 4096);
+
+                //                 // Resize if needed with zeroing
+                //                 if ( initial_mem_contents.size() <
+                //                      (next_sec->getVirtualMemoryStart() + next_sec->getImageLength()) ) {
+                //                     size_t size_now = initial_mem_contents.size();
+                //                     initial_mem_contents.resize(
+                //                         next_sec->getVirtualMemoryStart() + next_sec->getImageLength() + padding, 0);
+                //                 }
+
+                //                 // Find the section and read it all in
+                //                 fseek(exec_file, next_sec->getImageOffset(), SEEK_SET);
+                //                 fread(
+                //                     &initial_mem_contents[next_sec->getVirtualMemoryStart()],
+                //                     next_sec->getImageLength(), 1, exec_file);
+                //             }
+                //         }
+                //     }
+                // }
 
                 fclose(exec_file);
                 
-                const  int64_t pmem_offset_jvoroby = +0x200000;// +200 pages TODO: TEMP JVOROBY
-                const uint64_t pmem_start = pmem_offset_jvoroby;
+                // //const  int64_t pmem_offset_jvoroby = 0;// transparent mapping
+                // const  int64_t pmem_offset_jvoroby = +0x200000;// +200 pages TODO: TEMP JVOROBY
+                // const uint64_t pmem_start = pmem_offset_jvoroby;
 
                 output->verbose(
-                    CALL_INFO, 2, 0, ">> Writing memory contents (%" PRIu64 " bytes at index " PRIu64 ")\n",
-                    (uint64_t)initial_mem_contents.size(), pmem_start);
+                    CALL_INFO, 2, 0, ">> Writing memory contents (%" PRIu64 " bytes at index %" PRIu64 ")\n",
+                    (uint64_t)initial_mem_contents.size(), pa_offset);
 
                 //				SimpleMem::Request* writeExe = new
                 // SimpleMem::Request(SimpleMem::Request::Write, 					0,
                 // initial_mem_contents.size(), initial_mem_contents);
                 //lsq->setInitialMemory(0, initial_mem_contents);
-                lsq->setInitialMemory(pmem_start, initial_mem_contents); //TODO TEMP: JVOROBY
+                //
                 //				memInstInterface->sendInitData( writeExe
                 //);
+
+                //initial_mem_contents is indexed without pa_offset, add in the offset here:
+                lsq->setInitialMemory(pa_offset, initial_mem_contents); //TODO TEMP: JVOROBY
 
                 const uint64_t page_size = 4096;
 
                 //uint64_t initial_brk = (uint64_t)initial_mem_contents.size();
-                uint64_t initial_brk = pmem_start + (uint64_t)initial_mem_contents.size(); //TODO: TEMP JVOROBY
-                initial_brk          = initial_brk + (page_size - (initial_brk % page_size));
+                //uint64_t initial_brk = pmem_start + (uint64_t)initial_mem_contents.size(); //TODO: TEMP JVOROBY
+                //initial_brk          = initial_brk + (page_size - (initial_brk % page_size));
+                
+                uint64_t initial_brk          = ALIGN4K_UP(pa_offset+initial_mem_contents.size()); //TODO: JVOROBY brk v2
 
                 output->verbose(
                     CALL_INFO, 2, 0,
@@ -2045,21 +2247,24 @@ VANADIS_COMPONENT::init(unsigned int phase)
 
 
 
-                //TODO TEMP JVOROBY:
-                // ======================= MAP MEMORY:
-                // for now we just loaded in the file at pmem_start
-                // let's change that to map back to its original VA
-                // 100 pages should be more than enough. 
-                // There's also some stack stuff going on near 0x7f_fff_000 (just under 2gb)
-                // and near 0x60_000_000 (rand values? phdr? it's set in the decoder)
-                // but we're just going to leave that at physical
-                pageTableInterface->initCreateMapping(1); //noop for now, but lets put it in lest we forget
-                for(int64_t page_i = 0; page_i<1000; page_i++) {
-                    //physical addresses were placed at offset, original addreses were place
-                    uint64_t pa = 0x400000 + pmem_offset_jvoroby + (page_i * 0x1000);
-                    uint64_t va = 0x400000 + (page_i * 0x1000); //hardcoding this for now
-                    pageTableInterface->initMapPage(1, va, pa, 0); //map_id, VA, PA, flags
-                }
+                // //TODO TEMP JVOROBY:
+                // // ======================= MAP MEMORY:
+                // // for now we just loaded in the file at pmem_start
+                // // let's change that to map back to its original VA
+                // // 100 pages should be more than enough. 
+                // // There's also some stack stuff going on near 0x7f_fff_000 (just under 2gb)
+                // // and near 0x60_000_000 (rand values? phdr? it's set in the decoder)
+                // // but we're just going to leave that at physical
+                // if(pageTableInterface != nullptr) {
+                //     pageTableInterface->initCreateMapping(0); //TODO: TEMP, mapping_id=0
+                //                                             //, eventually will need different ones for each proc
+                //     for(int64_t page_i = 0; page_i<1000; page_i++) {
+                //         //physical addresses were placed at offset, original addreses were place
+                //         uint64_t pa = 0x400000 + pmem_offset_jvoroby + (page_i * 0x1000);
+                //         uint64_t va = 0x400000 + (page_i * 0x1000); //hardcoding this for now
+                //         pageTableInterface->initMapPage(0, va, pa, 0); //map_id, VA, PA, flags
+                //     }
+                // }
             }
             else {
                 output->verbose(CALL_INFO, 2, 0, "Not core-0, so will not perform any loading of binary info.\n");

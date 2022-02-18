@@ -297,6 +297,19 @@ public:
     void setSegmentFlags(const uint64_t new_flags) { segment_flags = new_flags; }
 
     VanadisELFProgramHeaderType getHeaderType() const { return hdr_type; }
+
+    bool isExecutable() const { return (segment_flags & 0x1) != 0; }
+    bool isWriteable()  const { return (segment_flags & 0x2) != 0; }
+    bool isReadable()   const { return (segment_flags & 0x4) != 0; }
+    std::string getFlagsString() const {
+        char buff[4];
+        buff[0] = isReadable()   ? 'R' : '-';
+        buff[1] = isWriteable()  ? 'W' : '-';
+        buff[2] = isExecutable() ? 'X' : '-';
+        buff[3] = '\0';
+        return std::string(buff);
+    }
+
     uint64_t getHeaderTypeNumber() const { return hdr_type_num; }
     uint64_t getImageOffset() const { return imgOffset; }
     uint64_t getVirtualMemoryStart() const { return virtMemAddrStart; }
@@ -319,8 +332,8 @@ public:
                         (void*)imgDataLen);
         output->verbose(CALL_INFO, 16, 0, "---> Image Mem Length:      %" PRIu64 " / %p\n", memDataLen,
                         (void*)memDataLen);
-        output->verbose(CALL_INFO, 16, 0, "---> Flags:                 %" PRIu64 " / 0x%0llx\n", segment_flags,
-                        segment_flags);
+        output->verbose(CALL_INFO, 16, 0, "---> Flags:                 %s / %" PRIu64 " / 0x%0llx\n", 
+                        getFlagsString().c_str(), segment_flags, segment_flags);
         output->verbose(CALL_INFO, 16, 0, "---> Alignment:             %" PRIu64 " / %p\n", alignment,
                         (void*)alignment);
     }
