@@ -1838,11 +1838,7 @@ VANADIS_COMPONENT::init(unsigned int phase)
     // Pull in all the binary contents and push this into the memory system
     // everything should be correctly up and running by now (components, links
     // etc)
-
-    //TODO: TEMP JAN
-    //binary_elf_info->print(output);
-    //output->fatal(CALL_INFO, -1, "DEBUG: Done printing");
-
+    
     if ( 0 == phase ) {
         if ( nullptr != binary_elf_info ) {
             if ( 0 == core_id ) {
@@ -1871,38 +1867,30 @@ VANADIS_COMPONENT::init(unsigned int phase)
                         size_t va     = p_hdr->getVirtualMemoryStart();
                         size_t filesz = p_hdr->getHeaderImageLength(); 
                         size_t memsz  = p_hdr->getHeaderMemoryLength();
-
-                        // === INVARIANTS???  (none of this code does useful work)
-                        // (a bunch of these aren't actually guaranteed, but I think are true in all ELFS
-                        //  that haven't been like, doctored or whatever? Let's just assert em for now and
-                        //  comment em out + document it when we find counterexamples)
                         
-
                         //  output->verbose(CALL_INFO, 20, 0, "-> Bounds so far: data_start 0x%lx, data_end 0x%lx, bss_end 0x%lx\n",
                         //          data_start, data_end, bss_end);
                         //  output->verbose(CALL_INFO, 20, 0, "-> Segment %d: va 0x%lx, offset 0x%lx, filesz 0x%lx, memsz 0x%lx\n",
                         //          i, va, offset, filesz, memsz);
-
                         //  output->verbose(CALL_INFO, 20, 0, "--> DEBUGGING ALIGN: AL_DWN(va) 0x%lx, AL_UP(va) 0x%lx\n",
                         //          ALIGN4K_DOWN(va), ALIGN4K_UP(va));
 
+                        // === MISCELLANEOUS ASSERTS
+                        // (not all are guaranteed, but lets assume them until we find counterexample ELFs in the wild)
 
-                        // This one I believe has to be true, otherwise mmap elf-loading isn't possible
+                        // This one is guaranteed I think, va and file offset must be congruent mod page size
                         sst_assert(va % 4096 == offset % 4096, CALL_INFO, -1, "ELF segment %d: VA and offset not congruent mod 4k\n", i);
 
-                        //Load shouldn't overlap bounds of previous loads? (THIS ONE MIGHT NOT BE TRUE ALWAYS)
-                        //(INCORRECTNESS: this is too strict: it checks if it comes after or before all other loads,
-                        //  doesn't allow for loading things into gaps, 
-                        //  but that probably won't happen in naturally occurring elves)
+                        // Loads shouldn't overlap in Virtual-addresses NOT GUARANTEED
+                        // (THIS ASSERT IS TOO STRICT, DOESN'T ALLOW HOLES: but I think it's fine)
                         sst_assert(ALIGN4K_DOWN(va) >= ALIGN4K_UP(bss_end) || ALIGN4K_UP(va+memsz) <= ALIGN4K_DOWN(data_start),
                                 CALL_INFO, -1, "UNEXPECTED: ELF segment %d: overlaps preceding segments\n", i);
 
                         // Having only the last segment have BSS data is NOT REQUIRED, but seems to be true almost always?
+                        // only way bss_end > data_end is if a preceding LOAD segment had memsz>filesz
                         sst_assert(data_end == bss_end, CALL_INFO, -1, "UNEXPECTED: Preceding ELF segment had BSS data but wasn't final LOAD\n");
-                        //only way bss_end > data_end is if a preceding LOAD segment had memsz>filesz
                         
-                        // == end invariants
-
+                        // Actually record the bounds
                         if (va < data_start)          { data_start = va; }        // min(va)
                         if (va+filesz > data_end)     { data_end   = va+filesz; } // max(va+filesz)
                         if (va+memsz > bss_end)       { bss_end    = va+memsz; }  // max(va+memsz)
@@ -1947,11 +1935,8 @@ VANADIS_COMPONENT::init(unsigned int phase)
                     data_start, data_end, bss_end);
                 initial_mem_contents.resize(ALIGN4K_UP(bss_end), (uint8_t)0);
 
-                // Populate the memory with contents from the binary
-                //
-                
 
-                //======= Old Loading code
+                // =================  Populate the memory with contents from the binary
                 
                 // TRUE THINGS ABOUT ELF LOADING (I think)
                 // - We only need to touch program headers (segments) marked LOAD
@@ -1963,22 +1948,11 @@ VANADIS_COMPONENT::init(unsigned int phase)
                 // - almost all naturally occurring ELF's will have exactly one segment with memsz != filesz,
                 //      this will be the R/W BSS segment
                 //      it will be the last segment in the list of headers AND by VA
-                //
-                // 
                 
                 
                 size_t pa_offset = 0x800000;
-
                 output->verbose(CALL_INFO, 2, 0, "-> populating memory contents (at PA=0x%lx) with info from the executable...\n",
                     pa_offset);
-
-
-                // if(pageTableInterface != nullptr) {
-                //     output->verbose(CALL_INFO, 2, 0, "[vmem]-> Slurping %ld bytes of ELF file into memory at pa=0x%lx\n", 
-                //             file_end, pa_file_start);
-                //     fseek( exec_file, 0, SEEK_SET ); 
-                //     fread( &initial_mem_contents[ 0 ], file_end, 1, exec_file);
-                // }
 
                 if (pageTableInterface != nullptr) {  //Need to initialize memory-mapping before we can start mapping pages
                     pageTableInterface->initCreateMapping(TEMP_MAPPING_ID); //
@@ -1992,25 +1966,13 @@ VANADIS_COMPONENT::init(unsigned int phase)
                         size_t va     = p_hdr->getVirtualMemoryStart();
                         size_t filesz = p_hdr->getHeaderImageLength(); 
                         size_t memsz  = p_hdr->getHeaderMemoryLength();
-                        //p_hdr->getAlignment();
                         //p_hdr->getSegmentFlags();
-                        
 
                         output->verbose(CALL_INFO, 2, 0, ">> Loading ELF segment %d (%s): va 0x%lx, offset 0x%lx, filesz 0x%lx, memsz 0x%lx\n",
                                   i, p_hdr->getFlagsString().c_str(), va, offset, filesz, memsz);
 
-                        //output->verbose(CALL_INFO, 2, 0,
-                        //        ">> Loading Program Header from executable at %p, len=%" PRIu64 "...\n", (void*) offset, filesz);
-
-                        //output->verbose(CALL_INFO, 2,
-                        //        0, ">>>> Placing at virtual address: %p\n", (void*) va);
-
-                        // Note - padding automatically zeros because we perform a resize with parameter 0 given 
-                        //const uint64_t padding = 4096 - ((va + filesz) % 4096);
-
                         sst_assert(initial_mem_contents.size() >= ALIGN4K_UP(va+memsz), CALL_INFO, -1,
                                 "ELF loading: initial_mem_contents should already be set to max size\n");
-
 
 
                         //=== We're gonna load not just from offset to offset+filesz, but we're gonna expand
@@ -2026,8 +1988,6 @@ VANADIS_COMPONENT::init(unsigned int phase)
                         fread(&initial_mem_contents[ALIGN4K_DOWN(va)], loadpages_size, 1, exec_file);
                         //pa_offset will be added when sending initial_mem_contents to LSQ
 
-
-
                         // For initializing the page table, we'll need to map not just the data sections but also the BSS
                         // sections, so loop up to memsz
                         if (pageTableInterface != nullptr) {
@@ -2038,7 +1998,6 @@ VANADIS_COMPONENT::init(unsigned int phase)
                                 pageTableInterface->initMapPage(TEMP_MAPPING_ID, pg_va, pg_pa, flags);
                             }
                         }
-                        
 
                         //We've loaded this segment, we've mapped the pages, now zero out any BSS data
                         //(especially since we loaded the data in full pages, we might have ragged edges where
@@ -2047,74 +2006,6 @@ VANADIS_COMPONENT::init(unsigned int phase)
                         if(memsz > filesz)
                             { std::memset(&initial_mem_contents[clear_start], 0, memsz-filesz); }
                         //pa_offset will be added when sending initial_mem_contents to LSQ
-
-
-
-
-                        // Do we have enough space in the memory image, if not, extend and zero 
-                        //if( initial_mem_contents.size() < (va + filesz)) {
-                        //    initial_mem_contents.resize( ( va + filesz + padding), 0);
-                        //}
-                        
-                        //
-                        ////LOAD segments specific offset to offset+filesz, but we expanded that to page boundaries
-                        ////Makes sure it still makes sense
-                        //assert(file_end_page - file_start_page > filesz);
-                        //
-                        //  #IFDEF: NO_VMEM: //Load the segment, expanded out to nearest page boundaries
-                        //      fseek(align_down(offset))
-                        //      fread(initial_mem_contents[align_down(va)], loadpages_size)
-                        //
-                        //  #ELSE // mmap each page
-                        //
-                        //for (pg = 0; pg < loadpages_size; pg += 4096)
-                        //      initMapPage(align_down(va) + pg, pa_file_start + align_down(offset) + pg)
-                        //}
-                        //  #ENDIF
-                        //
-                        // //if memsz > filesz, may also need to map BSS pages
-                        // if(memsz > filesz) {
-                        //
-                        //
-                        //  #IFDEF: NO_VMEM: 
-                        //      //Nothing extra to do, we'll need to zero things out in any case to be safe
-                        //  #ELSE // mmap bonus BSS pages
-                        //
-                        //      //If we have any extra bss pages that need mapping between va+filesz and va+memsz:
-                        //      num_bss_pages = ALIGN4K_UP(va+memsz) - ALIGN4K_UP(va+filesz);
-                        //      for (pg = 0; pg < num_bss_pages*4096; pg += 4096)
-                        //
-                        //          curr_bss_page = ALIGN4K_UP(va+filesz) + pg;
-                        //          assert(curr_bss_page >= va+filesz)
-                        //          assert(curr_bss_page < ALIGN4K_UP(va+memsz))
-                        //
-                        //          new_phys_page = getBlankPhysPage();
-                        //
-                        //          output->verbose(..., ">> Mapping BSS page at va=0x%lx, pa=0x%lx", curr_bss_page, new_phys_page);
-                        //          initMapPage(curr_bss_page, new_page)
-                        //      }
-                        //}
-                        //  #ENDIF
-                        //      // Zero out the BSS area (don't need to expand to page boundaries)
-                        //
-                        //      //start zeroing after filesz, go out to memsz
-                        //
-                        //      if (pageTableInterface == nullptr) { //no vmem, initial_mem is at VA
-                        //          output->verbose(..., ">> Zeroing BSS section from va=0x%lx to before va=0x%lx\n", va+filesz, va+memsz);
-                        //          std::memset(&initial_mem_contents[va+filesz], 0, memsz-filesz);
-                        //      
-                        //      } else { //If we have v-mem: remaining BSS pages aren't part of initial_mem_contents
-                        //          //Only need to zero ragged end of page
-                        //          std::memset(&initial_mem_contents[va+filesz], 0, memsz-filesz);
-                        //      }
-                        //
-                        //      //TODO: should technically only need to zero out to ALIGN4K_UP(va+filesz)
-                        //      //But doesn't hurt to be thorough
-                        // }
-                        //
-                        
-
-
 
                     }
                 }
@@ -2211,33 +2102,15 @@ VANADIS_COMPONENT::init(unsigned int phase)
 
                 fclose(exec_file);
                 
-                // //const  int64_t pmem_offset_jvoroby = 0;// transparent mapping
-                // const  int64_t pmem_offset_jvoroby = +0x200000;// +200 pages TODO: TEMP JVOROBY
-                // const uint64_t pmem_start = pmem_offset_jvoroby;
 
                 output->verbose(
                     CALL_INFO, 2, 0, ">> Writing memory contents (%" PRIu64 " bytes at index %" PRIu64 ")\n",
                     (uint64_t)initial_mem_contents.size(), pa_offset);
 
-                //				SimpleMem::Request* writeExe = new
-                // SimpleMem::Request(SimpleMem::Request::Write, 					0,
-                // initial_mem_contents.size(), initial_mem_contents);
-                //lsq->setInitialMemory(0, initial_mem_contents);
-                //
-                //				memInstInterface->sendInitData( writeExe
-                //);
-
                 //initial_mem_contents is indexed without pa_offset, add in the offset here:
                 lsq->setInitialMemory(pa_offset, initial_mem_contents); //TODO TEMP: JVOROBY
 
-                const uint64_t page_size = 4096;
-
-                //uint64_t initial_brk = (uint64_t)initial_mem_contents.size();
-                //uint64_t initial_brk = pmem_start + (uint64_t)initial_mem_contents.size(); //TODO: TEMP JVOROBY
-                //initial_brk          = initial_brk + (page_size - (initial_brk % page_size));
-                
                 uint64_t initial_brk          = ALIGN4K_UP(pa_offset+initial_mem_contents.size()); //TODO: JVOROBY brk v2
-
                 output->verbose(
                     CALL_INFO, 2, 0,
                     ">> Setting initial break point to image size in "
@@ -2245,26 +2118,6 @@ VANADIS_COMPONENT::init(unsigned int phase)
                     initial_brk);
                 thread_decoders[0]->getOSHandler()->registerInitParameter(SYSCALL_INIT_PARAM_INIT_BRK, &initial_brk);
 
-
-
-                // //TODO TEMP JVOROBY:
-                // // ======================= MAP MEMORY:
-                // // for now we just loaded in the file at pmem_start
-                // // let's change that to map back to its original VA
-                // // 100 pages should be more than enough. 
-                // // There's also some stack stuff going on near 0x7f_fff_000 (just under 2gb)
-                // // and near 0x60_000_000 (rand values? phdr? it's set in the decoder)
-                // // but we're just going to leave that at physical
-                // if(pageTableInterface != nullptr) {
-                //     pageTableInterface->initCreateMapping(0); //TODO: TEMP, mapping_id=0
-                //                                             //, eventually will need different ones for each proc
-                //     for(int64_t page_i = 0; page_i<1000; page_i++) {
-                //         //physical addresses were placed at offset, original addreses were place
-                //         uint64_t pa = 0x400000 + pmem_offset_jvoroby + (page_i * 0x1000);
-                //         uint64_t va = 0x400000 + (page_i * 0x1000); //hardcoding this for now
-                //         pageTableInterface->initMapPage(0, va, pa, 0); //map_id, VA, PA, flags
-                //     }
-                // }
             }
             else {
                 output->verbose(CALL_INFO, 2, 0, "Not core-0, so will not perform any loading of binary info.\n");
