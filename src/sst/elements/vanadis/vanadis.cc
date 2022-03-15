@@ -1910,9 +1910,15 @@ VANADIS_COMPONENT::init(unsigned int phase)
                 //      it will be the last segment in the list of headers AND by VA
                 
                 
-                size_t pa_offset = 0x800000;
-                output->verbose(CALL_INFO, 2, 0, "-> populating memory contents (at PA=0x%lx) with info from the executable...\n",
-                    pa_offset);
+                // Where to load the initial memory image into physical memory
+                size_t pa_offset = 0;
+
+                //If we have virtual memory, we should be able to load this
+                //Into memory wherever we want: set a nonzero pa_offset to test it
+                if (pageTableInterface != nullptr) { pa_offset = 0x800000; }
+
+                output->verbose(CALL_INFO, 2, 0, "-> populating memory contents (at PA=0x%lx) "
+                                                 "with info from the executable...\n", pa_offset);
 
                 if (pageTableInterface != nullptr) {  //Need to initialize memory-mapping before we can start mapping pages
                     pageTableInterface->initCreateMapping(TEMP_MAPPING_ID); //
